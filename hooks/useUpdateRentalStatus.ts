@@ -17,11 +17,15 @@ export function useUpdateRentalStatus(
     status: "approved" | "rejected" | "completed"
   ) => {
     try {
+      console.log('useUpdateRentalStatus: Starting status update', { requestId, status });
       setLoading(true);
       setError(null);
+      console.log('useUpdateRentalStatus: Calling updateRentalRequestStatus');
       await updateRentalRequestStatus(requestId, status);
+      console.log('useUpdateRentalStatus: Status update successful');
       options.onSuccess?.();
     } catch (err) {
+      console.error('useUpdateRentalStatus: Error updating status:', err);
       const error = err as Error;
       setError(error);
       options.onError?.(error);

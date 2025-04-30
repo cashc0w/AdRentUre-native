@@ -94,6 +94,7 @@ export interface DirectusReview {
   reviewed: DirectusClientUser;
   rating: number;
   comment: string;
+  date_created: string;
 }
 
 export interface DirectusConversation {
@@ -470,7 +471,10 @@ export const getGearListings = async ({
     return response;
   } catch (error) {
     console.error("Error fetching gear listings:", error);
-    throw error;
+    if (error instanceof Error) {
+      throw new Error(`Failed to fetch gear listings: ${error.message}`);
+    }
+    throw new Error("Failed to fetch gear listings: Unknown error");
   }
 };
 
@@ -814,7 +818,7 @@ export const getUser = async (userId: string) => {
     return response as DirectusUser;
   } catch (error) {
     console.error("Error fetching user:", error);
-    throw new Error("User not found");
+    throw new Error("User not found:directus");
   }
 };
 
@@ -823,13 +827,18 @@ export const updateRentalRequestStatus = async (
   status: "approved" | "rejected" | "completed"
 ) => {
   try {
+    console.log('Updating rental request status:', { requestId, status });
     const response = await directus.request(
       updateItem("rental_requests", requestId, {
         status,
       })
     );
+    console.log('Status update response:', response);
+    
     try {
       const currentRequest = await getRentalRequest(requestId);
+      console.log('Current request after update:', currentRequest);
+      
       // Determine which user should receive the notification
       const recipientId =
         status === "approved" || status === "rejected"
@@ -841,6 +850,7 @@ export const updateRentalRequestStatus = async (
         client: recipientId,
         request: currentRequest.id,
       });
+      console.log('Notification sent to:', recipientId);
     } catch (error) {
       console.error("Error sending notification:", error);
     }
