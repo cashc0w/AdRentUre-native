@@ -1,11 +1,11 @@
 import { Tabs } from "expo-router";
 import { useAuth } from "../contexts/AuthContext";
-import { useClient } from "../hooks/useClient";
+import { useClientWithUserID } from "../hooks/useClientWithUserID";
 
 function TabNavigation() {
     const { user } = useAuth();
 
-    const { client } = useClient(user?.id || "");
+    const { client } = useClientWithUserID(user?.id || "");
     
     return (
       <Tabs>

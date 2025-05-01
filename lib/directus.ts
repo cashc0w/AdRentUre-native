@@ -745,7 +745,7 @@ export const getAssetURL = (fileId: string) => {
   return `${DIRECTUS_URL}/assets/${fileId}?width=800&height=600&fit=cover&quality=80`;
 };
 
-export const getOrCreateClient = async (userId: string) => {
+export const getClientWithUserID = async (userId: string) => {
   try {
     // Check if we have a token
     const token = await directus.getToken();
@@ -785,12 +785,52 @@ export const getOrCreateClient = async (userId: string) => {
   }
 };
 
+export const getClientWithClientID = async (clientId: string) => {
+  try {
+    // Check if we have a token
+    const token = await directus.getToken();
+    if (!token) {
+      throw new Error("Not authenticated");
+    }
+
+    // First try to find an existing client
+    const existingClients = await directus.request(
+      readItems("clients", {
+        filter: { id: clientId },
+        fields: ["*", "user.*"],
+        limit: 1,
+      })
+    );
+
+    if (existingClients && existingClients.length > 0) {
+      return existingClients[0] as DirectusClientUser;
+    }
+
+    // If no client exists, create one
+    const newClient = await directus.request(
+      createItem("clients", {
+        id: clientId,
+      })
+    );
+
+    return newClient as DirectusClientUser;
+  } catch (error) {
+    console.error("Error getting or creating client:", error);
+    if (error instanceof Error) {
+      if (error.message === "Not authenticated") {
+        throw new Error("You must be logged in to create a gear listing");
+      }
+    }
+    throw error;
+  }
+};
+
 export const getCurrentClient = async () => {
   try {
     const currentUser = await getCurrentUser();
     if (!currentUser) return null;
 
-    const client = await getOrCreateClient(currentUser.id);
+    const client = await getClientWithUserID(currentUser.id);
     return client;
   } catch (error) {
     console.error("Error getting current client:", error);
@@ -880,7 +920,7 @@ export const createConversation = async (data: {
 export const getUserConversations = async (userID: string) => {
   try {
     console.log("userID from backend", userID);
-    const client = await getOrCreateClient(userID);
+    const client = await getClientWithUserID(userID);
     console.log("client", client);
     const response = (await directus.request(
       readItems("conversations", {

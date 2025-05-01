@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { getGearListings, getOrCreateClient } from "../lib/directus";
+import { getGearListings, getClientWithUserID } from "../lib/directus";
 import type { DirectusGearListing } from "../lib/directus";
 
 export function useUserListings(userId: string) {
@@ -13,7 +13,7 @@ export function useUserListings(userId: string) {
         setLoading(true);
 
         // First get the client for this user
-        const client = await getOrCreateClient(userId);
+        const client = await getClientWithUserID(userId);
         if (!client) {
           throw new Error("Could not get client for user");
         }

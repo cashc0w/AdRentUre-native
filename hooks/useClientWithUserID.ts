@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
-import { getOrCreateClient } from "../lib/directus";
+import { getClientWithUserID } from "../lib/directus";
 import type { DirectusClientUser } from "../lib/directus";
 
-export function useClient(userID: string) {
+export function useClientWithUserID(userID: string) {
   const [client, setClient] = useState<DirectusClientUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
@@ -13,7 +13,7 @@ export function useClient(userID: string) {
         setLoading(true);
 
         // First get the client ID for this user
-        const client = await getOrCreateClient(userID);
+        const client = await getClientWithUserID(userID);
         if (!client) {
           throw new Error("Could not get client for user");
         }
