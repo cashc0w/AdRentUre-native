@@ -14,10 +14,10 @@ function TabNavigation() {
         <Tabs.Screen name="browse" options={{ title: 'Browse' }} />
         <Tabs.Screen name="messages" options={{ title: 'Messages' }} />
         <Tabs.Screen 
-          name="[id]/profile" 
+          name="profile/[id]" 
           options={{ 
             title: 'Profile',
-            href: user ? `${client?.id}/profile` : null
+            href: user ? `/profile/${client?.id}` : null
           }} 
         />
       </Tabs>
