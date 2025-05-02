@@ -7,6 +7,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 const Profile = () => {
   const { user, logout } = useAuth();
   const { id } = useLocalSearchParams();
+  console.log("This is the id", id);
   const { client, loading, error } = useClientWithClientID(id as string);
 
   console.log("This is the client", client);

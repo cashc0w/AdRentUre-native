@@ -8,18 +8,14 @@ function TabNavigation() {
     const { client } = useClientWithUserID(user?.id || "");
     
     return (
-      <Tabs>
-        <Tabs.Screen name="home" options={{ title: 'Home' }} />
-        <Tabs.Screen name="about" options={{ title: 'About' }} />
-        <Tabs.Screen name="browse" options={{ title: 'Browse' }} />
-        <Tabs.Screen name="messages" options={{ title: 'Messages' }} />
-        <Tabs.Screen 
-          name="profile/[id]" 
-          options={{ 
-            title: 'Profile',
-            href: user ? `/profile/${client?.id}` : null
-          }} 
-        />
+      <Tabs >
+        <Tabs.Screen name="about" options={{ title: 'About', href: !user ? `/about` : null }} />
+        <Tabs.Screen name="gear/browse" options={{ title: 'Browse' }} />
+        <Tabs.Screen name="messages" options={{ title: 'Messages',  href: user ? `/messages` : null }} />
+        <Tabs.Screen name="profile/[id]" options={{ title: 'Profile', href: user ? `/profile/${client?.id}` : null }} />
+        <Tabs.Screen name="auth" options={{ title: 'Login', href: !user ? `/auth` : null }} />
+        <Tabs.Screen name="gear/new" options={{ title: 'New', href: null }} />
+        <Tabs.Screen name="gear/[id]" options={{ title: 'Gear', href: null }} />
       </Tabs>
     );
   }

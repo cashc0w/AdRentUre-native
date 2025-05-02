@@ -19,6 +19,7 @@ import { read } from "fs";
 import { get } from "http";
 import { geocodeAddress } from "./geocoding";
 import { publishMessage } from "./ably";
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Use the correct Directus URL directly
 const DIRECTUS_URL = "https://creative-blini-b15912.netlify.app";
@@ -135,23 +136,51 @@ export interface AuthenticationData {
   expires: number;
 }
 
-// Initialize the Directus client
-export const directus = createDirectus(DIRECTUS_URL)
-  .with(authentication("json"))
-  .with(rest());
+// Initialize the Directus client with error handling
+export const directus = (() => {
+  try {
+    console.log('Initializing Directus client...');
+    const client = createDirectus(DIRECTUS_URL)
+      .with(authentication("json"))
+      .with(rest());
+    console.log('Directus client initialized successfully');
+    return client;
+  } catch (error) {
+    console.error('Error initializing Directus client:', error);
+    throw new Error('Failed to initialize Directus client');
+  }
+})();
 
 // Create a public client instance for unauthenticated requests
-export const publicClient = createDirectus(DIRECTUS_URL).with(rest());
+export const publicClient = (() => {
+  try {
+    console.log('Initializing public Directus client...');
+    const client = createDirectus(DIRECTUS_URL).with(rest());
+    console.log('Public Directus client initialized successfully');
+    return client;
+  } catch (error) {
+    console.error('Error initializing public Directus client:', error);
+    throw new Error('Failed to initialize public Directus client');
+  }
+})();
 
 // Auth functions
 export const loginUser = async (email: string, password: string) => {
   try {
+    console.log('Attempting to login user...');
     // Use the SDK's login method directly
     const loginResult = await directus.request(login(email, password));
+    console.log('Login request successful');
 
     // Store the token
     if (loginResult?.access_token) {
+      console.log('Setting token in Directus client...');
       await directus.setToken(loginResult.access_token);
+      console.log('Setting token in AsyncStorage...');
+      await AsyncStorage.setItem('auth_token', loginResult.access_token);
+      console.log('Token stored successfully');
+    } else {
+      console.warn('No access token received from login');
     }
 
     return loginResult;
@@ -212,9 +241,11 @@ export const register = async (
 
 export const logout = async () => {
   try {
-    console.log("Logging out...");
-    localStorage.removeItem("auth_token");
-    directus.setToken(null);
+    console.log("Starting logout process...");
+    console.log("Removing token from AsyncStorage...");
+    await AsyncStorage.removeItem("auth_token");
+    console.log("Clearing token in Directus client...");
+    await directus.setToken(null);
     console.log("Logout successful");
   } catch (error) {
     console.error("Logout error:", error);
@@ -224,9 +255,17 @@ export const logout = async () => {
 
 export async function getCurrentUser(): Promise<DirectusUser> {
   try {
+    console.log('Getting current user...');
+    const token = await directus.getToken();
+    if (!token) {
+      console.warn('No token available when getting current user');
+      throw new Error('Not authenticated');
+    }
     const response = await directus.request(readMe());
+    console.log('Current user fetched successfully');
     return response as DirectusUser;
   } catch (error) {
+    console.error("Error getting current user:", error);
     throw new Error("Failed to get current user");
   }
 }

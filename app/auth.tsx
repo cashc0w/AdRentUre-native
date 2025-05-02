@@ -44,7 +44,7 @@ export default function AuthScreen() {
         await register(email, password, firstName, lastName, address);
       }
       
-      router.replace('/browse');
+      router.replace('/gear/browse');
     } catch (err) {
       setError(err as Error);
     } finally {

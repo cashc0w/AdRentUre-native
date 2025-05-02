@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import { loginUser, logout, getCurrentUser } from '../lib/directus';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface User {
   id: string;
@@ -24,14 +25,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
-    checkAuth();
+    const initAuth = async () => {
+      try {
+        console.log('Initializing auth...');
+        await checkAuth();
+      } catch (err) {
+        console.error('Auth initialization error:', err);
+      }
+    };
+    initAuth();
   }, []);
 
   const checkAuth = async () => {
+    console.log('Checking auth...');
     try {
+      const token = await AsyncStorage.getItem('auth_token');
+      console.log('Token found:', token ? 'yes' : 'no');
+      
+      if (!token) {
+        console.log('No token found, setting user to null');
+        setUser(null);
+        setLoading(false);
+        return;
+      }
+      
+      console.log('Getting current user...');
       const currentUser = await getCurrentUser();
+      console.log('Current user:', currentUser);
       setUser(currentUser);
     } catch (err) {
+      console.error('Auth check error:', err);
+      // Clear potentially invalid token
+      await AsyncStorage.removeItem('auth_token');
       setUser(null);
     } finally {
       setLoading(false);
@@ -39,13 +64,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const login = async (email: string, password: string) => {
+    console.log('Attempting login...');
     try {
       setLoading(true);
       setError(null);
+      
+      console.log('Calling loginUser...');
       await loginUser(email, password);
+      
+      console.log('Getting current user after login...');
       const currentUser = await getCurrentUser();
+      console.log('Login successful, current user:', currentUser);
+      
       setUser(currentUser);
     } catch (err) {
+      console.error('Login error:', err);
       setError(err as Error);
       throw err;
     } finally {
@@ -54,12 +87,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logoutUser = async () => {
+    console.log('Attempting logout...');
     try {
       setLoading(true);
       setError(null);
+      
+      console.log('Calling logout...');
       await logout();
+      
+      console.log('Logout successful, clearing user');
       setUser(null);
     } catch (err) {
+      console.error('Logout error:', err);
       setError(err as Error);
       throw err;
     } finally {

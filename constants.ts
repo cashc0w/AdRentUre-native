@@ -1,0 +1,1 @@
+export const DIRECTUS_URL = 'https://adrenture.up.railway.app'; 

@@ -1,9 +1,9 @@
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, ScrollView, Image, ActivityIndicator, Pressable } from 'react-native'
 import React, { useState } from 'react'
-import "../globals.css";
-import { useGearListings, type SortOption } from '../hooks/useGearListings';
-import { useAuth } from '../contexts/AuthContext';
-import { getAssetURL } from '../lib/directus';
+import "../../globals.css";
+import { useGearListings, type SortOption } from '../../hooks/useGearListings';
+import { useAuth } from '../../contexts/AuthContext';
+import { getAssetURL } from '../../lib/directus';
 import { useRouter } from 'expo-router';
 
 const categories = [
