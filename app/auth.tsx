@@ -12,12 +12,13 @@
 
 // export default Auth
 
-import { useState,  } from 'react';
+import { useState } from 'react';
 import React from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, FlatList } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../contexts/AuthContext';
 import { register } from '../lib/directus';
+import { autocompleteAddress } from '../lib/mapbox';
 import "../globals.css";
 
 export default function AuthScreen() {
@@ -29,7 +30,9 @@ export default function AuthScreen() {
   const [address, setAddress] = useState('');
   const [error, setError] = useState<Error | null>(null);
   const [loading, setLoading] = useState(false);
-  
+  const [addressSuggestions, setAddressSuggestions] = useState<any[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
   const { login } = useAuth();
   const router = useRouter();
 
@@ -37,19 +40,35 @@ export default function AuthScreen() {
     try {
       setLoading(true);
       setError(null);
-      
       if (isLogin) {
         await login(email, password);
       } else {
         await register(email, password, firstName, lastName, address);
       }
-      
       router.replace('/gear/browse');
     } catch (err) {
       setError(err as Error);
     } finally {
       setLoading(false);
     }
+  };
+
+
+  const handleAddressChange = async (text: string) => {
+    setAddress(text);
+    if (text.length > 2) {
+      const results = await autocompleteAddress(text);
+      setAddressSuggestions(results);
+      setShowSuggestions(true);
+    } else {
+      setAddressSuggestions([]);
+      setShowSuggestions(false);
+    }
+  };
+
+  const handleSuggestionPress = (feature: any) => {
+    setAddress(feature.place_name);
+    setShowSuggestions(false);
   };
 
   return (
@@ -121,8 +140,22 @@ export default function AuthScreen() {
                   className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500"
                   placeholder="Enter your address"
                   value={address}
-                  onChangeText={setAddress}
+                  onChangeText={handleAddressChange}
+                  autoCorrect={false}
+                  autoCapitalize="none"
                 />
+                {showSuggestions && addressSuggestions.length > 0 && (
+                  <FlatList
+                    data={addressSuggestions}
+                    keyExtractor={item => item.id}
+                    renderItem={({ item }) => (
+                      <TouchableOpacity onPress={() => handleSuggestionPress(item)}>
+                        <Text style={{ padding: 8, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#eee' }}>{item.place_name}</Text>
+                      </TouchableOpacity>
+                    )}
+                    style={{ maxHeight: 150, backgroundColor: '#fff', borderWidth: 1, borderColor: '#ccc', borderRadius: 4 }}
+                  />
+                )}
               </View>
             )}
 

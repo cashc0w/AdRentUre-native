@@ -17,7 +17,7 @@ import {
 } from "@directus/sdk";
 import { read } from "fs";
 import { get } from "http";
-import { geocodeAddress } from "./geocoding";
+import { geocode, Location } from "./mapbox";
 import { publishMessage } from "./ably";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -31,6 +31,7 @@ export interface DirectusUser {
   last_name: string;
   role: string;
   status: string;
+  location: string;
   created_at: string;
   updated_at: string;
 }
@@ -134,6 +135,15 @@ export interface AuthenticationData {
   access_token: string;
   refresh_token: string;
   expires: number;
+}
+
+interface MapboxGeocodingResponse {
+  features: Array<{
+    center: [number, number]; // [longitude, latitude]
+    place_name: string;
+    text: string;
+    properties: any;
+  }>;
 }
 
 // Initialize the Directus client with error handling
@@ -263,6 +273,7 @@ export async function getCurrentUser(): Promise<DirectusUser> {
     }
     const response = await directus.request(readMe());
     console.log('Current user fetched successfully');
+
     return response as DirectusUser;
   } catch (error) {
     console.error("Error getting current user:", error);
@@ -474,7 +485,7 @@ export const getGearListings = async ({
         });
       }
     } catch (error) {
-      console.error("Error in distance calculation:", error);
+      
       // Apply the requested sort if distance sorting fails
       response = response.sort((a, b) => {
         switch (sort) {
@@ -1243,3 +1254,22 @@ export const createAndPublishNotification = async (data: {
     throw error;
   }
 };
+
+// Update the geocodeAddress function to use Mapbox
+export async function geocodeAddress(address: string): Promise<{ latitude: number; longitude: number; radius: number }> {
+  try {
+    const data = await geocode(address);
+    if (!data.features || data.features.length === 0) {
+      throw new Error('No results found');
+    }
+    const [longitude, latitude] = data.features[0].center;
+    return {
+      latitude,
+      longitude,
+      radius: 5, // or whatever default you want
+    };
+  } catch (error) {
+    console.error('Geocoding error:', error);
+    throw error;
+  }
+}

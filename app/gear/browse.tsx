@@ -1,5 +1,5 @@
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, ScrollView, Image, ActivityIndicator, Pressable } from 'react-native'
-import React, { useState } from 'react'
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, ScrollView, Image, ActivityIndicator, Pressable, RefreshControl } from 'react-native'
+import React, { useEffect, useState } from 'react'
 import "../../globals.css";
 import { useGearListings, type SortOption } from '../../hooks/useGearListings';
 import { useAuth } from '../../contexts/AuthContext';
@@ -26,47 +26,93 @@ const sortOptions = [
 ]
 
 export default function Browse() {
-  const [maxRadius, setMaxRadius] = useState<number | undefined>(undefined);
+  
   const [searchInput, setSearchInput] = useState('')
+  const [tempFilters, setTempFilters] = useState({
+    category: '',
+    condition: '',
+    minPrice: undefined as number | undefined,
+    maxPrice: undefined as number | undefined,
+    maxDistance: undefined as number | undefined,
+    search: ''
+  })
   const [filters, setFilters] = useState({
     category: '',
     condition: '',
     minPrice: undefined as number | undefined,
     maxPrice: undefined as number | undefined,
+    maxDistance: undefined as number | undefined,
     search: ''
   })
   const [currentPage, setCurrentPage] = useState(1)
   const [sort, setSort] = useState<SortOption>('date_created_desc')
   const { user } = useAuth()
   const router = useRouter()
+  const [refreshing, setRefreshing] = useState(false);
 
   const { listings = [], loading, error, totalPages } = useGearListings({
     filters,
     page: currentPage,
     sort,
-    maxRadius,
+    maxRadius: filters.maxDistance,
+    userLocation: user?.location,
   })
 
-  const handleFilterChange = (key: string, value: string | number) => {
-    setFilters(prev => ({
+
+
+  const handleTempFilterChange = (key: string, value: string | number) => {
+    setTempFilters(prev => ({
       ...prev,
       [key]: value === '' ? undefined : value
     }))
-    setCurrentPage(1)
   }
 
   const handleSearchSubmit = () => {
-    handleFilterChange('search', searchInput)
+    handleTempFilterChange('search', searchInput)
+    console.log("user address", user?.location);
+    console.log("search input", searchInput);
   }
 
   const clearSearch = () => {
     setSearchInput('')
-    handleFilterChange('search', '')
+    handleTempFilterChange('search', '')
+  }
+
+  const applyFilters = () => {
+    setFilters(tempFilters)
+    setCurrentPage(1)
+  }
+
+  const clearAllFilters = () => {
+    const clearedFilters = {
+      category: '',
+      condition: '',
+      minPrice: undefined,
+      maxPrice: undefined,
+      maxDistance: undefined,
+      search: ''
+    }
+    setTempFilters(clearedFilters)
+    setFilters(clearedFilters)
+    setSearchInput('')
+    setCurrentPage(1)
   }
 
   const handlePageChange = (newPage: number) => {
     setCurrentPage(newPage)
   }
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    applyFilters(); // This will refetch listings
+    setRefreshing(false);
+  };
+
+  useEffect(() => {
+    if (user && user.location) {
+      applyFilters();
+    }
+  }, [user]);
 
   if (loading) return (
     <View className="flex-1 justify-center items-center">
@@ -84,63 +130,165 @@ export default function Browse() {
   )
 
   return (
-    <ScrollView className="flex-1 bg-white">
-      {/* Search Bar */}
-      <View className="p-4">
-        <View className="flex-row items-center border border-gray-300 rounded-lg p-2">
+    <ScrollView
+      className="flex-1 bg-white"
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+      }
+    >
+      {/* Header with Search and List Button */}
+      <View className="p-4 bg-white shadow-sm">
+        <View className="flex-row justify-between items-center mb-4">
+          <Text className="text-2xl font-bold text-gray-900">Browse Gear</Text>
+          {user && (
+            <TouchableOpacity
+              onPress={() => router.push('/gear/new')}
+              className="bg-green-600 px-4 py-2 rounded-lg"
+            >
+              <Text className="text-white font-medium">List Your Gear</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+        <View className="flex-row items-center bg-gray-50 rounded-xl p-2">
           <TextInput
             placeholder="Search for gear..."
-            className="flex-1 text-black"
+            className="flex-1 text-black px-2"
             value={searchInput}
             onChangeText={setSearchInput}
           />
           {searchInput ? (
             <TouchableOpacity onPress={clearSearch} className="p-2">
-              <Text>✕</Text>
+              <Text className="text-gray-500">✕</Text>
             </TouchableOpacity>
           ) : null}
           <TouchableOpacity 
             onPress={handleSearchSubmit}
             className="bg-green-600 px-4 py-2 rounded-lg ml-2"
           >
-            <Text className="text-white">Search</Text>
+            <Text className="text-white font-medium">Search</Text>
           </TouchableOpacity>
         </View>
       </View>
 
       {/* Filters */}
       <View className="p-4 bg-gray-50">
-        <Text className="text-lg font-semibold mb-4">Filter & Sort</Text>
-        <View className="flex-row flex-wrap gap-2">
-          <View className="w-[48%]">
-            <TextInput
-              placeholder="Min Price"
-              className="border border-gray-300 rounded-lg p-2"
-              keyboardType="numeric"
-              value={filters.minPrice?.toString() || ''}
-              onChangeText={(value) => handleFilterChange('minPrice', value ? Number(value) : '')}
-            />
-          </View>
-          <View className="w-[48%]">
-            <TextInput
-              placeholder="Max Price"
-              className="border border-gray-300 rounded-lg p-2"
-              keyboardType="numeric"
-              value={filters.maxPrice?.toString() || ''}
-              onChangeText={(value) => handleFilterChange('maxPrice', value ? Number(value) : '')}
-            />
-          </View>
-          <View className="w-[48%]">
-            <TextInput
-              placeholder="Max Distance (km)"
-              className="border border-gray-300 rounded-lg p-2"
-              keyboardType="numeric"
-              value={maxRadius?.toString() || ''}
-              onChangeText={(value) => setMaxRadius(value ? Number(value) : undefined)}
-            />
+        <View className="flex-row justify-between items-center mb-4">
+          <Text className="text-lg font-semibold">Filters</Text>
+          <TouchableOpacity 
+            onPress={clearAllFilters}
+            className="bg-gray-200 px-3 py-1 rounded-full"
+          >
+            <Text className="text-gray-600 text-sm">Clear All</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Category Filter */}
+        <View className="mb-4">
+          <Text className="text-sm font-medium text-gray-700 mb-2">Category</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row">
+            {categories.map((category) => (
+              <TouchableOpacity
+                key={category}
+                onPress={() => handleTempFilterChange('category', category)}
+                className={`mr-2 px-4 py-2 rounded-full ${
+                  tempFilters.category === category ? 'bg-green-600' : 'bg-white'
+                }`}
+              >
+                <Text className={tempFilters.category === category ? 'text-white' : 'text-gray-700'}>
+                  {category}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
+        {/* Condition Filter */}
+        <View className="mb-4">
+          <Text className="text-sm font-medium text-gray-700 mb-2">Condition</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row">
+            {conditions.map((condition) => (
+              <TouchableOpacity
+                key={condition}
+                onPress={() => handleTempFilterChange('condition', condition)}
+                className={`mr-2 px-4 py-2 rounded-full ${
+                  tempFilters.condition === condition ? 'bg-green-600' : 'bg-white'
+                }`}
+              >
+                <Text className={tempFilters.condition === condition ? 'text-white' : 'text-gray-700'}>
+                  {condition}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
+        {/* Price Range */}
+        <View className="mb-4">
+          <Text className="text-sm font-medium text-gray-700 mb-2">Price Range</Text>
+          <View className="flex-row gap-2">
+            <View className="flex-1">
+              <TextInput
+                placeholder="Min Price"
+                className="bg-white border border-gray-200 rounded-lg p-2"
+                keyboardType="numeric"
+                value={tempFilters.minPrice?.toString() || ''}
+                onChangeText={(value) => handleTempFilterChange('minPrice', value ? Number(value) : '')}
+              />
+            </View>
+            <View className="flex-1">
+              <TextInput
+                placeholder="Max Price"
+                className="bg-white border border-gray-200 rounded-lg p-2"
+                keyboardType="numeric"
+                value={tempFilters.maxPrice?.toString() || ''}
+                onChangeText={(value) => handleTempFilterChange('maxPrice', value ? Number(value) : '')}
+              />
+            </View>
           </View>
         </View>
+
+        {/* Distance Filter */}
+        <View className="mb-4">
+          <Text className="text-sm font-medium text-gray-700 mb-2">Max Distance (km)</Text>
+          <TextInput
+            placeholder="Distance in km"
+            className="bg-white border border-gray-200 rounded-lg p-2"
+            keyboardType="numeric"
+            value={tempFilters.maxDistance?.toString() || ''}
+            onChangeText={(value) => handleTempFilterChange('maxDistance', value ? Number(value) : '')}
+          />
+        </View>
+
+        
+
+        {/* Submit Filters Button */}
+        <TouchableOpacity
+          onPress={applyFilters}
+          className="bg-green-600 py-3 rounded-lg"
+        >
+          <Text className="text-white font-medium text-center">Apply Filters</Text>
+        </TouchableOpacity>
       </View>
+
+      {/* Sort Options */}
+        <View className="mb-6 p-4">
+          <Text className="text-sm font-medium text-gray-700 mb-2">Sort By</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row">
+            {sortOptions.map((option) => (
+              <TouchableOpacity
+                key={option.value}
+                onPress={() => setSort(option.value as SortOption)}
+                className={`mr-2 px-4 py-2 rounded-full ${
+                  sort === option.value ? 'bg-green-600' : 'bg-white'
+                }`}
+              >
+                <Text className={sort === option.value ? 'text-white' : 'text-gray-700'}>
+                  {option.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
 
       {/* Listings Grid */}
       <View className="p-4">
@@ -150,7 +298,7 @@ export default function Browse() {
               <Pressable
                 key={listing.id}
                 onPress={() => router.push(`/gear/${listing.id}`)}
-                className="w-[48%] rounded-xl overflow-hidden shadow-lg"
+                className="w-[48%] rounded-xl overflow-hidden shadow-sm bg-white"
               >
                 {listing.gear_images && listing.gear_images.length > 0 ? (
                   <Image
@@ -159,15 +307,15 @@ export default function Browse() {
                     resizeMode="cover"
                   />
                 ) : (
-                  <View className="w-full h-48 bg-gray-200 items-center justify-center">
+                  <View className="w-full h-48 bg-gray-100 items-center justify-center">
                     <Text className="text-gray-400">No image</Text>
                   </View>
                 )}
-                <View className="p-2">
-                  <Text className="font-semibold" numberOfLines={1}>{listing.title}</Text>
-                  <Text className="text-green-600">${listing.price}/day</Text>
+                <View className="p-3">
+                  <Text className="font-semibold text-gray-800" numberOfLines={1}>{listing.title}</Text>
+                  <Text className="text-green-600 font-medium mt-1">${listing.price}/day</Text>
                   {listing.distance !== undefined && (
-                    <Text className="text-gray-500 text-xs">
+                    <Text className="text-gray-500 text-xs mt-1">
                       {listing.distance < 1
                         ? `${Math.round(listing.distance * 1000)}m away`
                         : `${listing.distance.toFixed(1)}km away`}
@@ -179,8 +327,8 @@ export default function Browse() {
           </View>
         ) : (
           <View className="items-center py-12">
-            <Text className="text-lg font-medium">No listings found</Text>
-            <Text className="text-gray-500">Try adjusting your filters</Text>
+            <Text className="text-lg font-medium text-gray-800">No listings found</Text>
+            <Text className="text-gray-500 mt-1">Try adjusting your filters</Text>
           </View>
         )}
 
@@ -190,16 +338,18 @@ export default function Browse() {
             <TouchableOpacity
               onPress={() => handlePageChange(currentPage - 1)}
               disabled={currentPage === 1}
-              className="px-4 py-2 border border-gray-300 rounded-lg"
+              className={`px-4 py-2 rounded-lg ${
+                currentPage === 1 ? 'bg-gray-100' : 'bg-white border border-gray-200'
+              }`}
             >
-              <Text>Previous</Text>
+              <Text className={currentPage === 1 ? 'text-gray-400' : 'text-gray-700'}>Previous</Text>
             </TouchableOpacity>
             {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
               <TouchableOpacity
                 key={page}
                 onPress={() => handlePageChange(page)}
                 className={`px-4 py-2 rounded-lg ${
-                  currentPage === page ? 'bg-green-600' : 'border border-gray-300'
+                  currentPage === page ? 'bg-green-600' : 'bg-white border border-gray-200'
                 }`}
               >
                 <Text className={currentPage === page ? 'text-white' : 'text-gray-700'}>
@@ -210,9 +360,11 @@ export default function Browse() {
             <TouchableOpacity
               onPress={() => handlePageChange(currentPage + 1)}
               disabled={currentPage === totalPages}
-              className="px-4 py-2 border border-gray-300 rounded-lg"
+              className={`px-4 py-2 rounded-lg ${
+                currentPage === totalPages ? 'bg-gray-100' : 'bg-white border border-gray-200'
+              }`}
             >
-              <Text>Next</Text>
+              <Text className={currentPage === totalPages ? 'text-gray-400' : 'text-gray-700'}>Next</Text>
             </TouchableOpacity>
           </View>
         )}

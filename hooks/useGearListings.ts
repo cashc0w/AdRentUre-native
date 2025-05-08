@@ -21,6 +21,7 @@ interface UseGearListingsOptions {
   itemsPerPage?: number;
   sort?: SortOption;
   maxRadius?: number;
+  userLocation?: string;
 }
 
 export function useGearListings({
@@ -29,6 +30,7 @@ export function useGearListings({
   itemsPerPage = 9,
   sort = "date_created_desc",
   maxRadius,
+  userLocation,
 }: UseGearListingsOptions = {}) {
   const [listings, setListings] = useState<DirectusGearListing[]>([]);
   const [loading, setLoading] = useState(true);
@@ -71,7 +73,7 @@ export function useGearListings({
     }
 
     fetchListings();
-  }, [filters, page, itemsPerPage, sort, maxRadius]);
+  }, [filters, page, itemsPerPage, sort, maxRadius, userLocation]);
 
   return {
     listings,
@@ -82,3 +84,4 @@ export function useGearListings({
     currentPage: page,
   };
 }
+
