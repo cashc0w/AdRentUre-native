@@ -1,6 +1,6 @@
 {
   "expo": {
-    "scheme": "gearmeup-native",
+    "scheme": "com.gearmeup.native",
     "name": "GearMeUp-native",
     "slug": "GearMeUp-native",
     "version": "1.0.0",

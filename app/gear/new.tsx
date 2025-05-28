@@ -1,10 +1,11 @@
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native'
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Platform } from 'react-native'
 import React, { useState } from 'react'
 import "../../globals.css";
 import { useAuth } from '../../contexts/AuthContext';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { createGearListing, getClientWithUserID } from '../../lib/directus';
+import { createGearListing, getClientWithUserID, DirectusClientUser } from '../../lib/directus';
+import * as ImageManipulator from 'expo-image-manipulator';
 
 const categories = [
   { id: 'camping', name: 'Camping' },
@@ -27,7 +28,7 @@ type FormData = {
   category: string
   price: string
   condition: string
-  images: ImagePicker.ImagePickerAsset[]
+  images: ProcessedImage[]
 }
 
 type FormErrors = {
@@ -38,6 +39,12 @@ type FormErrors = {
   condition?: string
   location?: string
   images?: string
+}
+
+interface ProcessedImage {
+  uri: string;
+  type: string;
+  name: string;
 }
 
 export default function NewGearPage() {
@@ -53,6 +60,7 @@ export default function NewGearPage() {
     images: []
   })
   const [errors, setErrors] = useState<FormErrors>({})
+  const [images, setImages] = useState<ProcessedImage[]>([])
 
   const validateForm = () => {
     const newErrors: FormErrors = {}
@@ -68,19 +76,43 @@ export default function NewGearPage() {
   }
 
   const pickImages = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsMultipleSelection: true,
-      quality: 1,
-    })
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsMultipleSelection: true,
+        quality: 0.5, // Initial quality reduction
+        base64: false,
+      });
 
-    if (!result.canceled) {
-      setFormData(prev => ({
-        ...prev,
-        images: [...prev.images, ...result.assets]
-      }))
+      if (!result.canceled) {
+        const processedImages = await Promise.all(
+          result.assets.map(async (asset) => {
+            // Compress and resize the image
+            const manipResult = await ImageManipulator.manipulateAsync(
+              asset.uri,
+              [{ resize: { width: 800 } }], // Resize to max width of 800px
+              { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG } // Compress to 70% quality
+            );
+
+            return {
+              uri: manipResult.uri,
+              type: 'image/jpeg',
+              name: `image-${Date.now()}.jpg`,
+            } as ProcessedImage;
+          })
+        );
+
+        setImages(processedImages);
+        setFormData(prev => ({
+          ...prev,
+          images: processedImages
+        }));
+      }
+    } catch (error) {
+      console.error('Error picking images:', error);
+      Alert.alert('Error', 'Failed to pick images. Please try again.');
     }
-  }
+  };
 
   const onSubmit = async () => {
     if (!user) {
@@ -94,35 +126,89 @@ export default function NewGearPage() {
 
     setIsSubmitting(true)
     try {
-      const client = await getClientWithUserID(user.id)
+      // Add a timeout to prevent infinite loading
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Operation timed out')), 30000); // 30 second timeout
+      });
+
+      const client = await Promise.race([
+        getClientWithUserID(user.id),
+        timeoutPromise
+      ]) as DirectusClientUser;
+
       if (!client) {
         throw new Error('Failed to get or create client')
       }
 
-      // Convert ImagePicker assets to files
-      const imageFiles = await Promise.all(
-        formData.images.map(async (asset) => {
-          const response = await fetch(asset.uri)
-          const blob = await response.blob()
-          return new File([blob], 'image.jpg', { type: 'image/jpeg' })
-        })
-      )
+      // Process images with progress tracking
+      const totalImages = images.length;
+      let processedImages = 0;
 
-      await createGearListing({
+      const imageFiles = await Promise.all(
+        images.map(async (asset, index) => {
+          try {
+            console.log(`Processing image ${index + 1}/${totalImages}:`, asset.uri);
+            
+            let processedImage;
+            // Handle web platform
+            if (Platform.OS === 'web') {
+              const response = await fetch(asset.uri);
+              if (!response.ok) {
+                throw new Error(`Failed to fetch image: ${response.status}`);
+              }
+              const blob = await response.blob();
+              processedImage = new File([blob], `image-${index}.jpg`, { type: 'image/jpeg' });
+            } else {
+              // Handle mobile platforms - no need for additional processing since we already compressed
+              processedImage = {
+                uri: asset.uri,
+                type: 'image/jpeg',
+                name: `image-${index}.jpg`
+              };
+            }
+
+            processedImages++;
+            console.log(`Progress: ${processedImages}/${totalImages} images processed`);
+            
+            return processedImage;
+          } catch (error) {
+            console.error(`Error processing image ${index + 1}:`, error);
+            throw new Error(`Failed to process image ${index + 1}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          }
+        })
+      );
+
+      console.log('Successfully processed all images');
+
+      // Create the listing with a timeout
+      const listingPromise = createGearListing({
         ...formData,
         price: parseFloat(formData.price),
         ownerID: client.id,
         images: imageFiles,
-      })
-      router.push('/gear')
+      });
+
+      const listing = await Promise.race([
+        listingPromise,
+        timeoutPromise
+      ]);
+
+      router.push('/gear');
     } catch (error) {
-      console.error('Error creating gear listing:', error)
-      Alert.alert(
-        'Error',
-        error instanceof Error ? error.message : 'An error occurred while creating the gear listing. Please try again.'
-      )
+      console.error('Error creating gear listing:', error);
+      let errorMessage = 'An error occurred while creating the gear listing. Please try again.';
+      
+      if (error instanceof Error) {
+        if (error.message === 'Operation timed out') {
+          errorMessage = 'The operation took too long. Please try again.';
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
+      Alert.alert('Error', errorMessage);
     } finally {
-      setIsSubmitting(false)
+      setIsSubmitting(false);
     }
   }
 
@@ -235,9 +321,9 @@ export default function NewGearPage() {
             >
               <Text className="text-green-600 font-medium">Select Images</Text>
             </TouchableOpacity>
-            {formData.images.length > 0 && (
+            {images.length > 0 && (
               <Text className="mt-2 text-sm text-gray-500">
-                {formData.images.length} image{formData.images.length !== 1 ? 's' : ''} selected
+                {images.length} image{images.length !== 1 ? 's' : ''} selected
               </Text>
             )}
             {errors.images && (

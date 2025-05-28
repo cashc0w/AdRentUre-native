@@ -20,6 +20,7 @@ import { get } from "http";
 import { geocode, Location } from "./mapbox";
 import { publishMessage } from "./ably";
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Crypto from 'expo-crypto';
 
 // Use the correct Directus URL directly
 const DIRECTUS_URL = "https://creative-blini-b15912.netlify.app";
@@ -401,92 +402,89 @@ export const getGearListings = async ({
 
       if (currentUser?.location) {
         console.log("User's location string:", currentUser.location);
-        userLocation = await geocodeAddress(currentUser.location);
-        console.log("Geocoded user location:", userLocation);
-
-        // Add distance to each listing
-        response = await Promise.all(
-          response.map(async (listing) => {
-            console.log("Processing listing:", listing.id);
-            console.log("Listing polygon:", listing.polygon);
-
-            const center = calculatePolygonCenter(listing.polygon);
-            console.log("Listing center:", center);
-
-            let distance: number | undefined = undefined;
-            if (center) {
-              distance = calculateDistance(
-                userLocation!.latitude,
-                userLocation!.longitude,
-                center.lat,
-                center.lng
-              );
-              console.log("Calculated distance:", distance, "km");
-            } else {
-              console.warn(
-                `Could not calculate distance for listing ${listing.id} due to invalid polygon data`
-              );
-            }
-
-            return {
-              ...listing,
-              distance,
-            };
-          })
-        );
-
-        // Filter by radius if specified
-        if (maxRadius) {
-          console.log("Filtering by max radius:", maxRadius, "km");
-          const beforeCount = response.length;
-          response = response.filter((listing) => {
-            // Keep listings with valid distances that are within radius
-            // Put listings with invalid distances at the end
-            if (listing.distance === undefined) return true;
-            return listing.distance <= maxRadius;
-          });
-          console.log(
-            "Filtered out",
-            beforeCount - response.length,
-            "listings"
-          );
+        try {
+          userLocation = await geocodeAddress(currentUser.location);
+          console.log("Geocoded user location:", userLocation);
+        } catch (geocodeError) {
+          console.warn("Geocoding failed, proceeding without location-based sorting:", geocodeError);
+          // Continue without location-based sorting
         }
 
-        // Sort by distance, putting listings with no distance at the end
-        console.log("Sorting by distance");
-        response = response.sort((a, b) => {
-          if (a.distance === undefined && b.distance === undefined) return 0;
-          if (a.distance === undefined) return 1;
-          if (b.distance === undefined) return -1;
-          return a.distance - b.distance;
-        });
+        if (userLocation) {
+          // Add distance to each listing
+          response = await Promise.all(
+            response.map(async (listing) => {
+              try {
+                console.log("Processing listing:", listing.id);
+                console.log("Listing polygon:", listing.polygon);
+
+                const center = calculatePolygonCenter(listing.polygon);
+                console.log("Listing center:", center);
+
+                let distance: number | undefined = undefined;
+                if (center) {
+                  distance = calculateDistance(
+                    userLocation!.latitude,
+                    userLocation!.longitude,
+                    center.lat,
+                    center.lng
+                  );
+                  console.log("Calculated distance:", distance, "km");
+                } else {
+                  console.warn(
+                    `Could not calculate distance for listing ${listing.id} due to invalid polygon data`
+                  );
+                }
+
+                return {
+                  ...listing,
+                  distance,
+                };
+              } catch (listingError) {
+                console.error(`Error processing listing ${listing.id}:`, listingError);
+                return {
+                  ...listing,
+                  distance: undefined,
+                };
+              }
+            })
+          );
+
+          // Filter by radius if specified
+          if (maxRadius) {
+            console.log("Filtering by max radius:", maxRadius, "km");
+            const beforeCount = response.length;
+            response = response.filter((listing) => {
+              // Keep listings with valid distances that are within radius
+              // Put listings with invalid distances at the end
+              if (listing.distance === undefined) return true;
+              return listing.distance <= maxRadius;
+            });
+            console.log(
+              "Filtered out",
+              beforeCount - response.length,
+              "listings"
+            );
+          }
+
+          // Sort by distance, putting listings with no distance at the end
+          console.log("Sorting by distance");
+          response = response.sort((a, b) => {
+            if (a.distance === undefined && b.distance === undefined) return 0;
+            if (a.distance === undefined) return 1;
+            if (b.distance === undefined) return -1;
+            return a.distance - b.distance;
+          });
+        }
       } else {
         console.log("No user location available, using default sort");
-        // If no user location, apply the requested sort
-        response = response.sort((a, b) => {
-          switch (sort) {
-            case "date_created_desc":
-              return (
-                new Date(b.date_created).getTime() -
-                new Date(a.date_created).getTime()
-              );
-            case "date_created_asc":
-              return (
-                new Date(a.date_created).getTime() -
-                new Date(b.date_created).getTime()
-              );
-            case "price_asc":
-              return a.price - b.price;
-            case "price_desc":
-              return b.price - a.price;
-            default:
-              return 0;
-          }
-        });
       }
     } catch (error) {
-      
-      // Apply the requested sort if distance sorting fails
+      console.warn("Error processing user location, using default sort:", error);
+    }
+
+    // If no user location or geocoding failed, apply the requested sort
+    if (!userLocation) {
       response = response.sort((a, b) => {
         switch (sort) {
           case "date_created_desc":
@@ -568,7 +566,11 @@ export const createGearListing = async (data: {
   price: number;
   condition: string;
   ownerID: string;
-  images: File[];
+  images: Array<File | {
+    uri: string;
+    type: string;
+    name: string;
+  }>;
 }) => {
   try {
     // Check if we have a token
@@ -597,28 +599,58 @@ export const createGearListing = async (data: {
 
     console.log("polygon", polygon);
 
-    // First upload the images
-    const uploadedImages = await Promise.all(
-      data.images.map(async (file) => {
-        const formData = new FormData();
-        formData.append("file", file);
+    // First upload the images with progress tracking
+    const totalImages = data.images.length;
+    let uploadedImages = 0;
 
-        const response = await fetch(`${DIRECTUS_URL}/files`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-          body: formData,
-        });
+    const uploadedImageIds = await Promise.all(
+      data.images.map(async (image, index) => {
+        try {
+          console.log(`Uploading image ${index + 1}/${totalImages}`);
+          const formData = new FormData();
+          
+          // Handle both web File objects and mobile image objects
+          if (image instanceof File) {
+            formData.append("file", image);
+          } else {
+            formData.append("file", {
+              uri: image.uri,
+              type: image.type,
+              name: image.name,
+            } as any);
+          }
 
-        if (!response.ok) {
-          throw new Error("Failed to upload image");
+          const response = await fetch(`${DIRECTUS_URL}/files`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+            body: formData,
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Image upload failed:', {
+              status: response.status,
+              statusText: response.statusText,
+              error: errorText
+            });
+            throw new Error(`Failed to upload image ${index + 1}: ${response.status} ${response.statusText}`);
+          }
+
+          const fileData = await response.json();
+          uploadedImages++;
+          console.log(`Progress: ${uploadedImages}/${totalImages} images uploaded`);
+          
+          return fileData.data.id;
+        } catch (error) {
+          console.error(`Error uploading image ${index + 1}:`, error);
+          throw error;
         }
-
-        const fileData = await response.json();
-        return fileData.data.id;
       })
     );
+
+    console.log('Successfully uploaded all images');
 
     // Then create the gear listing with the uploaded image IDs and polygon
     const response = await directus.request(
@@ -630,7 +662,7 @@ export const createGearListing = async (data: {
         condition: data.condition,
         polygon: polygon,
         owner: data.ownerID,
-        gear_images: uploadedImages.map((fileId) => ({
+        gear_images: uploadedImageIds.map((fileId) => ({
           directus_files_id: fileId,
         })),
       })
@@ -1240,9 +1272,9 @@ export const createAndPublishNotification = async (data: {
     );
 
     // Publish to Ably channel for real-time updates
-    await publishMessage(`notifications:${data.client}`, {
-      id: crypto.randomUUID(),
-      conversationId: `notifications:${data.client}`,
+    await publishMessage(`private-chat:notifications:${data.client}`, {
+      id: await Crypto.randomUUID(),
+      conversationId: `private-chat:notifications:${data.client}`,
       senderId: "system",
       message: "new_notification",
       timestamp: new Date().toISOString(),

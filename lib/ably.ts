@@ -1,17 +1,20 @@
 import Ably from "ably";
+import Constants from "expo-constants";
 
 let ably: Ably.Realtime | null = null;
 let connectionPromise: Promise<void> | null = null;
 
 export function getAblyInstance() {
   if (!ably) {
-    if (!process.env.NEXT_PUBLIC_ABLY_API_KEY) {
+    console.log("Constants.expoConfig?.extra?.ablyApiKey", Constants.expoConfig?.extra?.ablyApiKey);
+    console.log("process.env.EXPO_PUBLIC_ABLY_API_KEY", process.env.EXPO_PUBLIC_ABLY_API_KEY);
+    if (!process.env.EXPO_PUBLIC_ABLY_API_KEY || Constants.expoConfig?.extra?.ablyApiKey === '') {
       throw new Error("Ably API key is not configured");
     }
 
     console.log("Initializing Ably connection...");
     ably = new Ably.Realtime({
-      key: process.env.NEXT_PUBLIC_ABLY_API_KEY,
+      key: process.env.EXPO_PUBLIC_ABLY_API_KEY,
       clientId: Math.random().toString(36).substring(2),
       echoMessages: false,
       disconnectedRetryTimeout: 5000,
@@ -129,9 +132,14 @@ export interface AblyMessage {
 export function getChannelInstance(channelId: string) {
   try {
     const ably = getAblyInstance();
-    const channelName = `chat:${channelId}`;
+    const channelName = `private-chat:${channelId}`;
+    console.log(`Creating channel instance for: ${channelName}`);
+    
     const channel = ably.channels.get(channelName, {
       modes: ["subscribe", "publish"],
+      params: {
+        rewind: "1",
+      }
     });
 
     channel.on((stateChange: Ably.ChannelStateChange) => {
@@ -142,6 +150,13 @@ export function getChannelInstance(channelId: string) {
           reason: stateChange.reason,
         }
       );
+
+      if (stateChange.current === "failed") {
+        console.error("Channel access denied:", {
+          channel: channelName,
+          reason: stateChange.reason,
+        });
+      }
     });
 
     return channel;
@@ -167,10 +182,7 @@ export async function publishMessage(channelId: string, message: AblyMessage) {
 
       const publish = () => {
         try {
-          channel.publish({
-            name: "message",
-            data: message,
-          });
+          channel.publish("message", message);
           clearTimeout(timer);
           console.log("Message published successfully to channel:", channelId);
           resolve();

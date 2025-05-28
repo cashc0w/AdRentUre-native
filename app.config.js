@@ -10,6 +10,7 @@ export default {
     orientation: "portrait",
     icon: "./assets/icon.png",
     userInterfaceStyle: "light",
+    scheme: "gearmeup",
     splash: {
       image: "./assets/splash-icon.png",
       resizeMode: "contain",
@@ -21,7 +22,8 @@ export default {
       infoPlist: {
         "NSLocationWhenInUseUsageDescription": "We need your location to show nearby places",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "We need your location to show nearby places",
-        "UIBackgroundModes": ["location", "fetch"]
+        "UIBackgroundModes": ["location", "fetch"],
+        "LSApplicationQueriesSchemes": ["gearmeup"]
       }
     },
     android: {
@@ -41,6 +43,7 @@ export default {
     },
     extra: {
       mapboxToken: process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN,
+      ablyApiKey: process.env.EXPO_PUBLIC_ABLY_API_KEY,
     },
     plugins: [
       "expo-router",
@@ -50,7 +53,14 @@ export default {
           "locationWhenInUsePermission": "Allow $(PRODUCT_NAME) to use your location."
         }
       ]
-    ]
+    ],
+    updates: {
+      fallbackToCacheTimeout: 0,
+      url: "https://u.expo.dev/your-project-id"
+    },
+    runtimeVersion: {
+      policy: "sdkVersion"
+    }
   }
 };
 

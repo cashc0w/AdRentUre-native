@@ -6,18 +6,21 @@ import {
   AblyMessage,
   getAblyInstance,
 } from "../lib/ably";
+import { getConversationMessages } from "../lib/directus";
 
 export function useRealTimeMessages(conversationId: string) {
   const [messages, setMessages] = useState<DirectusMessage[]>([]);
   const [error, setError] = useState<Error | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
   const maxReconnectAttempts = 3;
-  const connectionCheckInterval = useRef<NodeJS.Timeout | null>(null);
+  const connectionCheckInterval = useRef<number | null>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimeoutRef = useRef<number | null>(null);
   const sentMessagesRef = useRef<Set<string>>(new Set());
   const connectFnRef = useRef<(() => Promise<void>) | null>(null);
+  const hasLoadedInitialMessages = useRef(false);
 
   // Convert Ably message to Directus format
   const convertAblyToDirectusMessage = useCallback(
@@ -27,7 +30,12 @@ export function useRealTimeMessages(conversationId: string) {
       date_created: ablyMessage.timestamp,
       sender: {
         id: ablyMessage.senderId,
-        user: { id: ablyMessage.senderId },
+        user: { 
+          id: ablyMessage.senderId,
+          first_name: "",
+          last_name: "",
+          email: ""
+        },
       } as any,
       conversation: {
         id: ablyMessage.conversationId,
@@ -79,6 +87,22 @@ export function useRealTimeMessages(conversationId: string) {
     try {
       cleanup();
       const ably = getAblyInstance();
+
+      // Load initial messages if not already loaded
+      if (!hasLoadedInitialMessages.current) {
+        try {
+          setIsLoading(true);
+          const initialMessages = await getConversationMessages(conversationId);
+          console.log("initialMessages", initialMessages);
+          setMessages(initialMessages);
+          hasLoadedInitialMessages.current = true;
+        } catch (err) {
+          console.error("Error loading initial messages:", err);
+          setError(err instanceof Error ? err : new Error("Failed to load messages"));
+        } finally {
+          setIsLoading(false);
+        }
+      }
 
       // Monitor connection state
       const handleConnectionStateChange = (stateChange: any) => {
@@ -156,10 +180,17 @@ export function useRealTimeMessages(conversationId: string) {
     connectFnRef.current = connect;
   }, [connect]);
 
-  // Reset messages when conversation changes
+  // Reset messages and state when conversation changes
   useEffect(() => {
     setMessages([]);
-  }, [conversationId]);
+    setError(null);
+    // Don't reset connection state when switching conversations
+    // setIsConnected(false);
+    // setReconnectAttempts(0);
+    hasLoadedInitialMessages.current = false;
+    cleanup();
+    connect();
+  }, [conversationId, connect, cleanup]);
 
   const sendMessage = useCallback(
     async (message: string, senderId: string) => {
@@ -224,5 +255,6 @@ export function useRealTimeMessages(conversationId: string) {
     isConnected,
     reconnectAttempts,
     maxReconnectAttempts,
+    isLoading,
   };
 }
