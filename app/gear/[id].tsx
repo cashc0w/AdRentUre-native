@@ -52,7 +52,6 @@ export default function GearDetail() {
     }
   }, [id])
 
-
   useEffect(() => {
     async function fetchListing() {
       try {
@@ -87,6 +86,33 @@ export default function GearDetail() {
     return date.toLocaleDateString();
   };
 
+  // Handle date picker changes with proper event handling
+  const handleStartDateChange = (event: any, selectedDate?: Date) => {
+    if (Platform.OS === 'android') {
+      setShowStartDatePicker(false);
+    }
+    if (selectedDate) {
+      setStartDate(selectedDate);
+    }
+  };
+
+  const handleEndDateChange = (event: any, selectedDate?: Date) => {
+    if (Platform.OS === 'android') {
+      setShowEndDatePicker(false);
+    }
+    if (selectedDate) {
+      setEndDate(selectedDate);
+    }
+  };
+
+  // For iOS, we need to handle the confirm/cancel actions
+  const confirmStartDate = () => {
+    setShowStartDatePicker(false);
+  };
+
+  const confirmEndDate = () => {
+    setShowEndDatePicker(false);
+  };
 
   const handleSubmit = async () => {
     if (!startDate || !endDate || !listing) return
@@ -105,7 +131,6 @@ export default function GearDetail() {
       throw new Error('Gear listing has no owner')
     }
 
-
     const rentalRequest = await submitRequest({
       gear_listing: listing.id,
       renter: clientRenter.id,
@@ -115,6 +140,38 @@ export default function GearDetail() {
       message: message?.trim(),
     })
   }
+
+  // Web-specific date input component
+  const WebDateInput = ({ value, onChange, placeholder, disabled = false }: {
+    value: Date | null;
+    onChange: (date: Date | null) => void;
+    placeholder: string;
+    disabled?: boolean;
+  }) => {
+    if (Platform.OS !== 'web') return null;
+    
+    return (
+      <input
+        type="date"
+        value={value ? value.toISOString().split('T')[0] : ''}
+        onChange={(e) => {
+          const date = e.target.value ? new Date(e.target.value) : null;
+          onChange(date);
+        }}
+        disabled={disabled}
+        min={new Date().toISOString().split('T')[0]}
+        style={{
+          width: '100%',
+          padding: '8px 12px',
+          border: '1px solid #D1D5DB',
+          borderRadius: '6px',
+          backgroundColor: 'white',
+          fontSize: '16px',
+          color: value ? '#3B82F6' : '#9CA3AF'
+        }}
+      />
+    );
+  };
 
   if (loading) {
     return (
@@ -155,6 +212,7 @@ export default function GearDetail() {
           <Text className="text-green-600 font-medium text-lg">Back</Text>
         </TouchableOpacity>
       </View>
+      
       {/* Image Carousel */}
       <View className="relative">
         <ScrollView
@@ -267,7 +325,7 @@ export default function GearDetail() {
           </View>
         </View>
 
-        {/* Rental Request Button */}
+        {/* Rental Request Form */}
         <View>
           {!user ? (
             <TouchableOpacity
@@ -279,7 +337,7 @@ export default function GearDetail() {
               </Text>
             </TouchableOpacity>
           ) : (
-            <View className="bg-gray-50 p-6 rounded-lg">
+            <View className="bg-gray-50 p-6 rounded-lg mt-6">
               <Text className="text-xl font-semibold mb-4 text-gray-900">Request to Rent</Text>
 
               {submitError && (
@@ -290,62 +348,97 @@ export default function GearDetail() {
               )}
 
               <View className="flex-row gap-4 mb-4">
+                {/* Start Date */}
                 <View className="flex-1">
                   <Text className="text-sm font-medium text-gray-700 mb-1">
                     Start Date
                   </Text>
-                  <TouchableOpacity
-                    onPress={() => setShowStartDatePicker(true)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white"
-                  >
-                    <Text className={`${startDate ? 'text-blue-500' : 'text-gray-400'}`}>
-                      {formatDate(startDate)}
-                    </Text>
-                  </TouchableOpacity>
+                  {Platform.OS === 'web' ? (
+                    <WebDateInput
+                      value={startDate}
+                      onChange={setStartDate}
+                      placeholder="Select start date"
+                    />
+                  ) : (
+                    <TouchableOpacity
+                      onPress={() => setShowStartDatePicker(true)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white"
+                    >
+                      <Text className={`${startDate ? 'text-blue-500' : 'text-gray-400'}`}>
+                        {formatDate(startDate)}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
 
+                {/* End Date */}
                 <View className="flex-1">
                   <Text className="text-sm font-medium text-gray-700 mb-1">
                     End Date
                   </Text>
-                  <TouchableOpacity
-                    onPress={() => setShowEndDatePicker(true)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white"
-                    disabled={!startDate}
-                  >
-                    <Text className={`${endDate ? 'text-blue-500' : 'text-gray-400'}`}>
-                      {formatDate(endDate)}
-                    </Text>
-                  </TouchableOpacity>
+                  {Platform.OS === 'web' ? (
+                    <WebDateInput
+                      value={endDate}
+                      onChange={setEndDate}
+                      placeholder="Select end date"
+                      disabled={!startDate}
+                    />
+                  ) : (
+                    <TouchableOpacity
+                      onPress={() => setShowEndDatePicker(true)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white"
+                      disabled={!startDate}
+                    >
+                      <Text className={`${endDate ? 'text-blue-500' : 'text-gray-400'}`}>
+                        {formatDate(endDate)}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               </View>
 
-              {showStartDatePicker && (
-                <DateTimePicker
-                  value={startDate || new Date()}
-                  mode="date"
-                  display="default"
-                  onChange={(event: any, selectedDate?: Date) => {
-                    setShowStartDatePicker(false);
-                    setStartDate(selectedDate ? selectedDate : null)
-                  }}
-                  minimumDate={new Date()}
-                />
+              {/* Native Date Pickers for Mobile */}
+              {Platform.OS !== 'web' && showStartDatePicker && (
+                <View>
+                  <DateTimePicker
+                    value={startDate || new Date()}
+                    mode="date"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    onChange={handleStartDateChange}
+                    minimumDate={new Date()}
+                  />
+                  {Platform.OS === 'ios' && (
+                    <TouchableOpacity
+                      onPress={confirmStartDate}
+                      className="bg-blue-500 py-2 px-4 rounded mt-2"
+                    >
+                      <Text className="text-white text-center">Confirm</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
               )}
 
-              {showEndDatePicker && (
-                <DateTimePicker
-                  value={endDate || startDate || new Date()}
-                  mode="date"
-                  display="default"
-                  onChange={(event: any, selectedDate?: Date) => {
-                    setShowEndDatePicker(false);
-                    setEndDate(selectedDate ? selectedDate : null)
-                  }}
-                  minimumDate={startDate || new Date()}
-                />
+              {Platform.OS !== 'web' && showEndDatePicker && (
+                <View>
+                  <DateTimePicker
+                    value={endDate || startDate || new Date()}
+                    mode="date"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    onChange={handleEndDateChange}
+                    minimumDate={startDate || new Date()}
+                  />
+                  {Platform.OS === 'ios' && (
+                    <TouchableOpacity
+                      onPress={confirmEndDate}
+                      className="bg-blue-500 py-2 px-4 rounded mt-2"
+                    >
+                      <Text className="text-white text-center">Confirm</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
               )}
 
+              {/* Message Input */}
               <View className="mb-4">
                 <Text className="text-sm font-medium text-gray-700 mb-1">
                   Message (Optional)
@@ -362,6 +455,7 @@ export default function GearDetail() {
                 />
               </View>
 
+              {/* Submit Button */}
               <TouchableOpacity
                 className={`w-full py-3 px-6 rounded-lg ${!startDate || !endDate || submitting
                   ? 'bg-gray-400'
