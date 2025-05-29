@@ -1,10 +1,13 @@
-import { View, Text, ScrollView, Image, TouchableOpacity, Dimensions, ActivityIndicator, Platform } from 'react-native'
+import { View, Text, ScrollView, Image, TouchableOpacity, Dimensions, ActivityIndicator, Platform, TextInput } from 'react-native'
+import DateTimePicker from '@react-native-community/datetimepicker'
 import React, { useEffect, useState } from 'react'
-import { useLocalSearchParams, useRouter } from 'expo-router'
-import { directus, DirectusGearListing, getGearListing } from '../../lib/directus'
+import { Router, useLocalSearchParams, useRouter } from 'expo-router'
+import { directus, DirectusGearListing, getGearListing, getClientWithUserID } from '../../lib/directus'
 import { useAuth } from '../../contexts/AuthContext'
-import { formatDistanceToNow } from 'date-fns'
+import { formatDistanceToNow, set } from 'date-fns'
 import { initializeMapbox, MAPBOX_TOKEN, isExpoGo } from '../../lib/mapbox'
+import { DirectusUser } from '@directus/sdk'
+import { useRentalRequest } from '../../hooks/useCreateRentalRequest'
 
 const { width } = Dimensions.get('window')
 
@@ -17,15 +20,20 @@ export default function GearDetail() {
   const [loading, setLoading] = useState(true)
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
   const [mapboxInitialized, setMapboxInitialized] = useState(false)
-  // Dynamically import Mapbox components only if not in Expo Go and not on web
-  let MapView, Camera, ShapeSource, FillLayer
-  if (!isExpoGo && Platform.OS !== 'web') {
-    const mapbox = require('@rnmapbox/maps')
-    MapView = mapbox.MapView
-    Camera = mapbox.Camera
-    ShapeSource = mapbox.ShapeSource
-    FillLayer = mapbox.FillLayer
-  }
+
+  const [startDate, setStartDate] = useState<Date | null>(null)
+  const [endDate, setEndDate] = useState<Date | null>(null)
+  const [message, setMessage] = useState('')
+  const [listing, setListing] = useState<DirectusGearListing | null>(null)
+  const [error, setError] = useState<Error | null>(null)
+  const [showStartDatePicker, setShowStartDatePicker] = React.useState(false);
+  const [showEndDatePicker, setShowEndDatePicker] = React.useState(false);
+
+  const { submitRequest, loading: submitting, error: submitError } = useRentalRequest({
+    onSuccess: () => {
+      alert('Rental request submitted successfully!')
+    },
+  })
 
   useEffect(() => {
     if (!isExpoGo && Platform.OS !== 'web') {
@@ -44,6 +52,25 @@ export default function GearDetail() {
     }
   }, [id])
 
+
+  useEffect(() => {
+    async function fetchListing() {
+      try {
+        setLoading(true)
+        const data = await getGearListing(id as string)
+        setListing(data)
+      } catch (err) {
+        setError(err as Error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    if (id) {
+      fetchListing()
+    }
+  }, [id]) 
+  
   const fetchGearItem = async () => {
     try {
       const response = await getGearListing(id)
@@ -53,6 +80,40 @@ export default function GearDetail() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const formatDate = (date: Date | null) => {
+    if (!date) return 'Select date';
+    return date.toLocaleDateString();
+  };
+
+
+  const handleSubmit = async () => {
+    if (!startDate || !endDate || !listing) return
+
+    if (!user) {
+      alert('You must be logged in to submit a rental request')
+      return
+    }
+
+    const clientRenter = await getClientWithUserID(user.id)
+    if (!clientRenter) {
+      throw new Error('Failed to get or create client renter')
+    }
+
+    if (!listing.owner) {
+      throw new Error('Gear listing has no owner')
+    }
+
+
+    const rentalRequest = await submitRequest({
+      gear_listing: listing.id,
+      renter: clientRenter.id,
+      owner: listing.owner.id,
+      start_date: startDate.toISOString(),
+      end_date: endDate.toISOString(),
+      message: message?.trim(),
+    })
   }
 
   if (loading) {
@@ -71,12 +132,22 @@ export default function GearDetail() {
     )
   }
 
+  // Dynamically import Mapbox components only if not in Expo Go and not on web
+  let MapView, Camera, ShapeSource, FillLayer
+  if (!isExpoGo && Platform.OS !== 'web') {
+    const mapbox = require('@rnmapbox/maps')
+    MapView = mapbox.MapView
+    Camera = mapbox.Camera
+    ShapeSource = mapbox.ShapeSource
+    FillLayer = mapbox.FillLayer
+  }
+
   return (
     <ScrollView className="flex-1 bg-white">
       {/* Back Button */}
       <View className="p-4 pt-6 flex-row items-center">
         <TouchableOpacity
-          onPress={() => router.push('/gear')}
+          onPress={() => router.push('/gear/browse')}
           className="flex-row items-center"
           accessibilityLabel="Go back to browse"
         >
@@ -109,9 +180,8 @@ export default function GearDetail() {
           {gear.gear_images.map((_, index) => (
             <View
               key={index}
-              className={`h-2 w-2 rounded-full mx-1 ${
-                index === currentImageIndex ? 'bg-white' : 'bg-white/50'
-              }`}
+              className={`h-2 w-2 rounded-full mx-1 ${index === currentImageIndex ? 'bg-white' : 'bg-white/50'
+                }`}
             />
           ))}
         </View>
@@ -172,8 +242,8 @@ export default function GearDetail() {
                   {isExpoGo
                     ? 'Map not available in Expo Go'
                     : Platform.OS === 'web'
-                    ? 'Map not available on web'
-                    : 'Loading map...'}
+                      ? 'Map not available on web'
+                      : 'Loading map...'}
                 </Text>
               </View>
             )}
@@ -198,20 +268,115 @@ export default function GearDetail() {
         </View>
 
         {/* Rental Request Button */}
-        <TouchableOpacity
-          onPress={() => {
-            if (!user) {
-              router.push('/auth/login')
-              return
-            }
-            // TODO: Implement rental request logic
-          }}
-          className="bg-green-600 py-4 rounded-lg mt-6"
-        >
-          <Text className="text-white font-semibold text-center text-lg">
-            Request to Rent
-          </Text>
-        </TouchableOpacity>
+        <View>
+          {!user ? (
+            <TouchableOpacity
+              onPress={() => router.push('/auth')}
+              className="bg-green-600 py-4 rounded-lg mt-6"
+            >
+              <Text className="text-white font-semibold text-center text-lg">
+                Login to Request
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <View className="bg-gray-50 p-6 rounded-lg">
+              <Text className="text-xl font-semibold mb-4 text-gray-900">Request to Rent</Text>
+
+              {submitError && (
+                <View className="mb-4 bg-red-100 border border-red-400 px-4 py-3 rounded">
+                  <Text className="text-red-700 font-bold">Error: </Text>
+                  <Text className="text-red-700">{submitError.message}</Text>
+                </View>
+              )}
+
+              <View className="flex-row gap-4 mb-4">
+                <View className="flex-1">
+                  <Text className="text-sm font-medium text-gray-700 mb-1">
+                    Start Date
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => setShowStartDatePicker(true)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white"
+                  >
+                    <Text className={`${startDate ? 'text-blue-500' : 'text-gray-400'}`}>
+                      {formatDate(startDate)}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View className="flex-1">
+                  <Text className="text-sm font-medium text-gray-700 mb-1">
+                    End Date
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => setShowEndDatePicker(true)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white"
+                    disabled={!startDate}
+                  >
+                    <Text className={`${endDate ? 'text-blue-500' : 'text-gray-400'}`}>
+                      {formatDate(endDate)}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {showStartDatePicker && (
+                <DateTimePicker
+                  value={startDate || new Date()}
+                  mode="date"
+                  display="default"
+                  onChange={(event: any, selectedDate?: Date) => {
+                    setShowStartDatePicker(false);
+                    setStartDate(selectedDate ? selectedDate : null)
+                  }}
+                  minimumDate={new Date()}
+                />
+              )}
+
+              {showEndDatePicker && (
+                <DateTimePicker
+                  value={endDate || startDate || new Date()}
+                  mode="date"
+                  display="default"
+                  onChange={(event: any, selectedDate?: Date) => {
+                    setShowEndDatePicker(false);
+                    setEndDate(selectedDate ? selectedDate : null)
+                  }}
+                  minimumDate={startDate || new Date()}
+                />
+              )}
+
+              <View className="mb-4">
+                <Text className="text-sm font-medium text-gray-700 mb-1">
+                  Message (Optional)
+                </Text>
+                <TextInput
+                  value={message}
+                  onChangeText={setMessage}
+                  multiline
+                  numberOfLines={3}
+                  className="text-blue-500 w-full px-3 py-2 border border-gray-300 rounded-md bg-white"
+                  placeholder="Add a message to the owner..."
+                  placeholderTextColor="#9CA3AF"
+                  textAlignVertical="top"
+                />
+              </View>
+
+              <TouchableOpacity
+                className={`w-full py-3 px-6 rounded-lg ${!startDate || !endDate || submitting
+                  ? 'bg-gray-400'
+                  : 'bg-green-500'
+                  }`}
+                onPress={handleSubmit}
+                disabled={!startDate || !endDate || submitting}
+              >
+                <Text className="text-white text-center font-medium">
+                  {submitting ? 'Submitting...' : 'Submit Request'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
       </View>
     </ScrollView>
   )
