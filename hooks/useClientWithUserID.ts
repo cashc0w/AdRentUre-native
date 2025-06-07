@@ -13,12 +13,12 @@ export function useClientWithUserID(userID: string) {
         setLoading(true);
 
         // First get the client ID for this user
-        const client = await getClientWithUserID(userID);
-        if (!client) {
+        const response = await getClientWithUserID(userID);
+        if (!response) {
           throw new Error("Could not get client for user");
         }
 
-        setClient(client);
+        setClient(response);
       } catch (err) {
         setError(err as Error);
       } finally {
