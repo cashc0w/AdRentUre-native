@@ -421,7 +421,7 @@ export default function ProfilePage() {
   } = useGearListings()
 
   // Filter listings client-side for the specific user
-  const listings = allListings.filter(listing => listing.owner?.id == id)
+  const listings = allListings?.filter(listing => listing.owner?.id == id) || []
 
   // Determine which listings to show
   const displayedListings = showAllListings ? listings : listings.slice(0, 2)
@@ -475,7 +475,7 @@ export default function ProfilePage() {
     )
   }
 
-  const isOwnProfile = (user?.id === client?.user.id) && (user?.id !== undefined)
+  const isOwnProfile = user?.id && client?.user?.id && (user.id === client.user.id)
 
   return (
     <ScrollView className="flex-1 bg-gray-50">
@@ -485,13 +485,13 @@ export default function ProfilePage() {
           <View className="flex-row items-center space-x-4">
             <View className="w-24 h-24 bg-gray-200 rounded-full justify-center items-center">
               <Text className="text-2xl text-gray-500">
-                {client.first_name[0]}
-                {client.last_name[0]}
+                {client?.first_name?.[0] || '?'}
+                {client?.last_name?.[0] || '?'}
               </Text>
             </View>
             <View className="flex-1">
               <Text className="text-2xl font-bold text-gray-900">
-                {client.first_name} {client.last_name}
+                {client?.first_name || ''} {client?.last_name || ''}
               </Text>
             </View>
             {/* here, There should be a gear button on the right side that links to /settings only if isOwnProfile */}

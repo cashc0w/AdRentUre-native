@@ -1153,6 +1153,7 @@ export const getNotifications = async (clientID: string) => {
       readItems("notifications", {
         filter: {
           client: clientID,
+          read: { _eq: false }, // Only fetch unread notifications
         },
         fields: ["*", "client.*"],
         sort: ["-date_created"],
@@ -1230,6 +1231,17 @@ export const getNotifications = async (clientID: string) => {
     //console.log("Enriched notifications:", enrichedNotifications);
     return enrichedNotifications;
   } catch (error) {
+    console.error("Error in notification processing:", error);
+    return [];
+  }
+};
+export const getMessageNotifications = async (clientID: string) => {
+  try{
+    const allCLientNotifictions = await getNotifications(clientID);
+    const messageNotifications = allCLientNotifictions.filter(
+      (notification) => notification.conversation)
+    return messageNotifications;
+    } catch (error) {
     console.error("Error in notification processing:", error);
     return [];
   }
