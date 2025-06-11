@@ -7,12 +7,14 @@ import { DirectusConversation, DirectusMessage, sendMessage } from '../lib/direc
 import { format, set } from 'date-fns';
 import { useAuth } from '../contexts/AuthContext';
 import { useClientWithUserID } from '../hooks/useClientWithUserID';
+import { reload } from 'expo-router/build/global-state/routing';
 
 const Messages = () => {
   const [selectedConversation, setSelectedConversation] = useState<DirectusConversation | null>(null);
   const [newMessage, setNewMessage] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [reload, setReload] = useState(false);
 
   const { user } = useAuth();
   const userId = user?.id || '';
@@ -23,11 +25,10 @@ const Messages = () => {
     conversations,
     loading: conversationsLoading,
     error: conversationsError,
-  } = useUserConversations(userId);
-  const [orderedConversations, setOrderedConversations] = useState<DirectusConversation[]>(conversations);
-  
+  } = useUserConversations(userId, reload);
+
   console.log("conversations", conversations);
-  console.log("orderedConversations", orderedConversations);
+
   const {
     messages: realTimeMessages,
     sendMessage: sendRealTimeMessage,
@@ -51,7 +52,6 @@ const Messages = () => {
     if (conversations.length > 0 && !selectedConversation) {
       setSelectedConversation(conversations[0]);
     }
-    setOrderedConversations(conversations);
   }, [conversations, selectedConversation]);
 
   const handleSendMessage = async () => {
@@ -75,21 +75,15 @@ const Messages = () => {
         message: newMessage.trim(),
       });
 
-      
+
       setNewMessage('');
     } catch (err) {
       console.error("Failed to send message:", err);
       setError(err instanceof Error ? err.message : "Failed to send message. Please try again.");
     } finally {
       setSending(false);
+      setReload(!reload); // Trigger a reload to fetch new messages
     }
-    const reorderedConversations = [...conversations].sort((a, b) => {
-        const aTime = a.last_change ? new Date(a.last_change).getTime() : 0;
-        const bTime = b.last_change ? new Date(b.last_change).getTime() : 0;
-        return bTime - aTime;
-      });
-      setOrderedConversations(reorderedConversations);
-
   };
 
   // Get the other user in the conversation (not the current user)
@@ -99,7 +93,7 @@ const Messages = () => {
       : conversation.user_1;
   };
 
-  if (conversationsLoading) {
+  if (loading) {
     return (
       <View className='flex-1 items-center justify-center'>
         <ActivityIndicator size="large" color="#0000ff" />
@@ -121,28 +115,34 @@ const Messages = () => {
 
       <View className='flex-1 flex-row'>
         {/* Conversations List */}
-        <View className='w-1/3 border-r border-gray-200 bg-gray-50'>
-          <ScrollView>
-            {orderedConversations.map((conversation) => {
-              const otherUser = getOtherUser(conversation);
-              return (
-                <TouchableOpacity
-                  key={conversation.id}
-                  className={`p-4 border-b border-gray-200 ${selectedConversation?.id === conversation.id ? 'bg-gray-100' : ''
-                    }`}
-                  onPress={() => setSelectedConversation(conversation)}
-                >
-                  <Text className='font-medium text-gray-900'>
-                    {otherUser ? `${otherUser.first_name} ${otherUser.last_name}` : 'Unknown User'}
-                  </Text>
-                  <Text className='text-sm text-gray-600 truncate'>
-                    {conversation.gear_listing ? conversation.gear_listing.title : 'No gear listing'}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
+        {conversationsLoading && !conversations ?
+          (<View className='flex-1 items-center justify-center'>
+            <ActivityIndicator size="large" color="#0000ff" />
+          </View>
+          ) : (
+            <View className='w-1/3 border-r border-gray-200 bg-gray-50'>
+              <ScrollView>
+                {conversations.map((conversation) => {
+                  const otherUser = getOtherUser(conversation);
+                  return (
+                    <TouchableOpacity
+                      key={conversation.id}
+                      className={`p-4 border-b border-gray-200 ${selectedConversation?.id === conversation.id ? 'bg-gray-100' : ''
+                        }`}
+                      onPress={() => setSelectedConversation(conversation)}
+                    >
+                      <Text className='font-medium text-gray-900'>
+                        {otherUser ? `${otherUser.first_name} ${otherUser.last_name}` : 'Unknown User'}
+                      </Text>
+                      <Text className='text-sm text-gray-600 truncate'>
+                        {conversation.gear_listing ? conversation.gear_listing.title : 'No gear listing'}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          )}
 
         {/* Chat Area */}
         <View className='flex-1 flex-col'>
@@ -186,8 +186,8 @@ const Messages = () => {
                         >
                           <View
                             className={`max-w-[75%] p-3 rounded-lg ${isCurrentUser
-                                ? 'bg-green-600'
-                                : 'bg-white border border-gray-200'
+                              ? 'bg-green-600'
+                              : 'bg-white border border-gray-200'
                               }`}
                           >
                             <Text
@@ -221,8 +221,8 @@ const Messages = () => {
                   />
                   <TouchableOpacity
                     className={`px-4 py-2 rounded-r-lg ${sending || !newMessage.trim()
-                        ? 'bg-gray-400'
-                        : 'bg-green-600'
+                      ? 'bg-gray-400'
+                      : 'bg-green-600'
                       }`}
                     onPress={handleSendMessage}
                     disabled={sending || !newMessage.trim()}

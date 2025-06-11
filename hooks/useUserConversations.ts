@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { getUserConversations } from "../lib/directus";
 import type { DirectusConversation } from "../lib/directus";
 
-export function useUserConversations(userID: string) {
+export function useUserConversations(userID: string, reload: boolean) {
   const [conversations, setConversations] = useState<DirectusConversation[]>(
     []
   );
@@ -26,7 +26,7 @@ export function useUserConversations(userID: string) {
     if (userID) {
       fetchUserConversations();
     }
-  }, [userID]);
+  }, [userID, reload]);
 
   return {
     conversations,
