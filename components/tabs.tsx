@@ -15,7 +15,6 @@ const MailIconWithBadge = ({ color, size, badgeCount }: { color: string; size: n
     <View className="relative w-15 h-6 items-center justify-center">
       <Ionicons name="mail-outline" size={size} color={color} />
       {badgeCount > 0 && color == 'gray' && (
-        // <View className="absolute top-0 right-0 inline-flex items-center justify-center w-4 h-4  bg-red-500 rounded-full"></View>
         <View
           style={{
             position: 'absolute',

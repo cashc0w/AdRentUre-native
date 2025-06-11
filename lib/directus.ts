@@ -105,6 +105,7 @@ export interface DirectusConversation {
   user_1: DirectusClientUser;
   user_2: DirectusClientUser;
   gear_listing: DirectusGearListing;
+  last_change: string;
   // created_at: string;
 }
 
@@ -1017,7 +1018,7 @@ export const getUserConversations = async (userID: string) => {
           "user_2.user.*",
           "gear_listing.*",
         ],
-        sort: ["-gear_listing.id"],
+        sort: ["-last_change"], // Sort by last change date
       })
     )) as DirectusConversation[];
 
@@ -1089,6 +1090,17 @@ export const sendMessage = async (data: {
 }) => {
   try {
     const response = await directus.request(createItem("messages", data));
+    try {
+      // Update the last_change field in the conversation
+      await directus.request(
+        updateItem("conversations", data.conversation, {
+          last_change: new Date().toISOString(),
+        })
+      );
+      console.log("Last change updated successfully");
+    } catch (error) {
+      console.error("Error editing last_change:", error);
+    }
     try {
       const currentConversation = await getConversation(data.conversation);
       // Get the recipient ID (the other user in the conversation)

@@ -4,7 +4,7 @@ import "../globals.css";
 import { useRealTimeMessages } from '../hooks/useRealTimeMessages';
 import { useUserConversations } from '../hooks/useUserConversations';
 import { DirectusConversation, DirectusMessage, sendMessage } from '../lib/directus';
-import { format } from 'date-fns';
+import { format, set } from 'date-fns';
 import { useAuth } from '../contexts/AuthContext';
 import { useClientWithUserID } from '../hooks/useClientWithUserID';
 
@@ -24,7 +24,10 @@ const Messages = () => {
     loading: conversationsLoading,
     error: conversationsError,
   } = useUserConversations(userId);
-
+  const [orderedConversations, setOrderedConversations] = useState<DirectusConversation[]>(conversations);
+  
+  console.log("conversations", conversations);
+  console.log("orderedConversations", orderedConversations);
   const {
     messages: realTimeMessages,
     sendMessage: sendRealTimeMessage,
@@ -48,6 +51,7 @@ const Messages = () => {
     if (conversations.length > 0 && !selectedConversation) {
       setSelectedConversation(conversations[0]);
     }
+    setOrderedConversations(conversations);
   }, [conversations, selectedConversation]);
 
   const handleSendMessage = async () => {
@@ -71,6 +75,7 @@ const Messages = () => {
         message: newMessage.trim(),
       });
 
+      
       setNewMessage('');
     } catch (err) {
       console.error("Failed to send message:", err);
@@ -78,6 +83,13 @@ const Messages = () => {
     } finally {
       setSending(false);
     }
+    const reorderedConversations = [...conversations].sort((a, b) => {
+        const aTime = a.last_change ? new Date(a.last_change).getTime() : 0;
+        const bTime = b.last_change ? new Date(b.last_change).getTime() : 0;
+        return bTime - aTime;
+      });
+      setOrderedConversations(reorderedConversations);
+
   };
 
   // Get the other user in the conversation (not the current user)
@@ -97,7 +109,7 @@ const Messages = () => {
   console.log("realTimeMessages", realTimeMessages);
 
   return (
-    <KeyboardAvoidingView 
+    <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       className='flex-1 bg-white'
     >
@@ -111,14 +123,13 @@ const Messages = () => {
         {/* Conversations List */}
         <View className='w-1/3 border-r border-gray-200 bg-gray-50'>
           <ScrollView>
-            {conversations.map((conversation) => {
+            {orderedConversations.map((conversation) => {
               const otherUser = getOtherUser(conversation);
               return (
                 <TouchableOpacity
                   key={conversation.id}
-                  className={`p-4 border-b border-gray-200 ${
-                    selectedConversation?.id === conversation.id ? 'bg-gray-100' : ''
-                  }`}
+                  className={`p-4 border-b border-gray-200 ${selectedConversation?.id === conversation.id ? 'bg-gray-100' : ''
+                    }`}
                   onPress={() => setSelectedConversation(conversation)}
                 >
                   <Text className='font-medium text-gray-900'>
@@ -174,11 +185,10 @@ const Messages = () => {
                           className={`flex ${isCurrentUser ? 'items-end' : 'items-start'}`}
                         >
                           <View
-                            className={`max-w-[75%] p-3 rounded-lg ${
-                              isCurrentUser
+                            className={`max-w-[75%] p-3 rounded-lg ${isCurrentUser
                                 ? 'bg-green-600'
                                 : 'bg-white border border-gray-200'
-                            }`}
+                              }`}
                           >
                             <Text
                               className={isCurrentUser ? 'text-white' : 'text-gray-800'}
@@ -186,9 +196,8 @@ const Messages = () => {
                               {message.message}
                             </Text>
                             <Text
-                              className={`text-xs mt-1 ${
-                                isCurrentUser ? 'text-green-200' : 'text-gray-500'
-                              }`}
+                              className={`text-xs mt-1 ${isCurrentUser ? 'text-green-200' : 'text-gray-500'
+                                }`}
                             >
                               {format(new Date(message.date_created), 'MMM d, h:mm a')}
                             </Text>
@@ -211,11 +220,10 @@ const Messages = () => {
                     editable={!sending}
                   />
                   <TouchableOpacity
-                    className={`px-4 py-2 rounded-r-lg ${
-                      sending || !newMessage.trim()
+                    className={`px-4 py-2 rounded-r-lg ${sending || !newMessage.trim()
                         ? 'bg-gray-400'
                         : 'bg-green-600'
-                    }`}
+                      }`}
                     onPress={handleSendMessage}
                     disabled={sending || !newMessage.trim()}
                   >
