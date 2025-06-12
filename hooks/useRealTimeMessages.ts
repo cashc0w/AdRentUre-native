@@ -21,6 +21,9 @@ export function useRealTimeMessages(conversationId: string) {
   const sentMessagesRef = useRef<Set<string>>(new Set());
   const connectFnRef = useRef<(() => Promise<void>) | null>(null);
   const hasLoadedInitialMessages = useRef(false);
+  
+  // Add callback ref for message received events
+  const messageReceivedCallbackRef = useRef<((message: DirectusMessage) => void) | null>(null);
 
   // Convert Ably message to Directus format
   const convertAblyToDirectusMessage = useCallback(
@@ -140,6 +143,8 @@ export function useRealTimeMessages(conversationId: string) {
             return;
           }
 
+          const directusMessage = convertAblyToDirectusMessage(message);
+
           setMessages((prev) => {
             // If we've already added this message locally (we sent it), don't add it again
             if (sentMessagesRef.current.has(message.id)) {
@@ -150,7 +155,13 @@ export function useRealTimeMessages(conversationId: string) {
             if (prev.some((m) => m.id === message.id)) {
               return prev;
             }
-            return [...prev, convertAblyToDirectusMessage(message)];
+            
+            // Trigger the callback for received messages
+            if (messageReceivedCallbackRef.current) {
+              messageReceivedCallbackRef.current(directusMessage);
+            }
+            
+            return [...prev, directusMessage];
           });
         }
       );
@@ -191,6 +202,16 @@ export function useRealTimeMessages(conversationId: string) {
     cleanup();
     connect();
   }, [conversationId, connect, cleanup]);
+
+  // Function to set the message received callback
+  const onMessageReceived = useCallback((callback: (message: DirectusMessage) => void) => {
+    messageReceivedCallbackRef.current = callback;
+    
+    // Return cleanup function
+    return () => {
+      messageReceivedCallbackRef.current = null;
+    };
+  }, []);
 
   const sendMessage = useCallback(
     async (message: string, senderId: string) => {
@@ -256,5 +277,6 @@ export function useRealTimeMessages(conversationId: string) {
     reconnectAttempts,
     maxReconnectAttempts,
     isLoading,
+    onMessageReceived, // Export the callback setter
   };
 }
