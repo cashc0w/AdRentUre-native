@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native'
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import "../globals.css";
 import { useGlobalMessages } from '../hooks/useGlobalMessages';
 import { useConversationMessages } from '../hooks/useConversationMessages';
@@ -13,6 +13,9 @@ const Messages = () => {
   const [selectedConversation, setSelectedConversation] = useState<DirectusConversation | null>(null);
   const [newMessage, setNewMessage] = useState('');
   const [conversationListReload, setConversationListReload] = useState(false);
+  
+  // Ref for auto-scrolling
+  const scrollViewRef = useRef<ScrollView>(null);
 
   const { user } = useAuth();
   const userId = user?.id || '';
@@ -40,6 +43,25 @@ const Messages = () => {
     error: messageError,
     isConnected: conversationConnected,
   } = useConversationMessages(selectedConversation?.id || '', currentClientId);
+
+  // Auto-scroll to bottom when messages change or conversation loads
+  useEffect(() => {
+    if (messages.length > 0 && !messagesLoading) {
+      // Small delay to ensure the UI has rendered
+      setTimeout(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    }
+  }, [messages, messagesLoading]);
+
+  // Auto-scroll when conversation changes (after loading completes)
+  useEffect(() => {
+    if (selectedConversation && !messagesLoading && messages.length > 0) {
+      setTimeout(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: false });
+      }, 200);
+    }
+  }, [selectedConversation?.id, messagesLoading]);
 
   // Listen for messages from any conversation to update the conversation list
   useEffect(() => {
@@ -74,6 +96,11 @@ const Messages = () => {
       
       // Trigger conversation list reload for sender
       setConversationListReload(prev => !prev);
+      
+      // Scroll to bottom after sending
+      setTimeout(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      }, 100);
     } catch (err) {
       console.error("Failed to send message:", err);
     }
@@ -172,7 +199,15 @@ const Messages = () => {
               </View>
 
               {/* Messages */}
-              <ScrollView className='flex-1 p-4 bg-gray-50'>
+              <ScrollView 
+                ref={scrollViewRef}
+                className='flex-1 p-4 bg-gray-50'
+                showsVerticalScrollIndicator={true}
+                maintainVisibleContentPosition={{
+                  minIndexForVisible: 0,
+                  autoscrollToTopThreshold: 10,
+                }}
+              >
                 {messagesLoading ? (
                   <View className='flex-1 items-center justify-center py-8'>
                     <ActivityIndicator size="large" color="#0000ff" />
@@ -227,6 +262,8 @@ const Messages = () => {
                     value={newMessage}
                     onChangeText={setNewMessage}
                     editable={!sending && globalConnected}
+                    onSubmitEditing={handleSendMessage}
+                    returnKeyType='send'
                   />
                   <TouchableOpacity
                     className={`px-4 py-2 rounded-r-lg ${
@@ -279,5 +316,3 @@ const Messages = () => {
 };
 
 export default Messages;
-
-const styles = StyleSheet.create({});

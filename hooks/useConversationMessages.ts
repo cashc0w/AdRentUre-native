@@ -10,12 +10,25 @@ export function useConversationMessages(conversationId: string, currentUserId: s
   const [sending, setSending] = useState(false);
   
   const { sendMessage: sendGlobalMessage, onMessageReceived, isConnected } = useGlobalMessages();
-  const hasLoadedInitialMessages = useRef(false);
   const sentMessagesRef = useRef<Set<string>>(new Set());
+  const currentConversationIdRef = useRef<string>('');
 
-  // Load initial messages
+  // Combined effect to handle conversation changes and message loading
   useEffect(() => {
-    if (!conversationId || hasLoadedInitialMessages.current) return;
+    // Reset state when conversation changes
+    if (currentConversationIdRef.current !== conversationId) {
+      setMessages([]);
+      setError(null);
+      setIsLoading(true);
+      sentMessagesRef.current.clear();
+      currentConversationIdRef.current = conversationId;
+    }
+
+    // Load messages for the current conversation
+    if (!conversationId) {
+      setIsLoading(false);
+      return;
+    }
 
     async function loadMessages() {
       try {
@@ -23,26 +36,24 @@ export function useConversationMessages(conversationId: string, currentUserId: s
         setError(null);
         const initialMessages = await getConversationMessages(conversationId);
         console.log("Loaded initial messages for conversation:", conversationId, initialMessages);
-        setMessages(initialMessages);
-        hasLoadedInitialMessages.current = true;
+        
+        // Only set messages if this is still the current conversation
+        if (currentConversationIdRef.current === conversationId) {
+          setMessages(initialMessages);
+        }
       } catch (err) {
         console.error("Error loading initial messages:", err);
-        setError(err instanceof Error ? err : new Error("Failed to load messages"));
+        if (currentConversationIdRef.current === conversationId) {
+          setError(err instanceof Error ? err : new Error("Failed to load messages"));
+        }
       } finally {
-        setIsLoading(false);
+        if (currentConversationIdRef.current === conversationId) {
+          setIsLoading(false);
+        }
       }
     }
 
     loadMessages();
-  }, [conversationId]);
-
-  // Reset when conversation changes
-  useEffect(() => {
-    setMessages([]);
-    setError(null);
-    setIsLoading(true);
-    hasLoadedInitialMessages.current = false;
-    sentMessagesRef.current.clear();
   }, [conversationId]);
 
   // Listen for new messages
@@ -52,6 +63,8 @@ export function useConversationMessages(conversationId: string, currentUserId: s
     const unsubscribe = onMessageReceived((message: DirectusMessage, messageConversationId: string) => {
       // Only process messages for this conversation
       if (messageConversationId !== conversationId) return;
+      // Also check if this is still the current conversation
+      if (currentConversationIdRef.current !== conversationId) return;
 
       console.log("Received message for conversation:", messageConversationId, message);
 
@@ -94,31 +107,34 @@ export function useConversationMessages(conversationId: string, currentUserId: s
       // Send via global real-time connection
       const ablyMessage = await sendGlobalMessage(conversationId, messageText, currentUserId);
       
-      // Add to local state optimistically
-      const optimisticMessage: DirectusMessage = {
-        id: ablyMessage.id,
-        message: ablyMessage.message,
-        date_created: ablyMessage.timestamp,
-        sender: {
-          id: ablyMessage.senderId,
-          user: { 
+      // Only add optimistic message if this is still the current conversation
+      if (currentConversationIdRef.current === conversationId) {
+        // Add to local state optimistically
+        const optimisticMessage: DirectusMessage = {
+          id: ablyMessage.id,
+          message: ablyMessage.message,
+          date_created: ablyMessage.timestamp,
+          sender: {
             id: ablyMessage.senderId,
-            first_name: "",
-            last_name: "",
-            email: ""
-          },
-        } as any,
-        conversation: {
-          id: ablyMessage.conversationId,
-        } as any,
-      };
+            user: { 
+              id: ablyMessage.senderId,
+              first_name: "",
+              last_name: "",
+              email: ""
+            },
+          } as any,
+          conversation: {
+            id: ablyMessage.conversationId,
+          } as any,
+        };
 
-      // Track that we sent this message to avoid duplication
-      sentMessagesRef.current.add(ablyMessage.id);
-      
-      setMessages(prev => [...prev, optimisticMessage].sort((a, b) => 
-        new Date(a.date_created).getTime() - new Date(b.date_created).getTime()
-      ));
+        // Track that we sent this message to avoid duplication
+        sentMessagesRef.current.add(ablyMessage.id);
+        
+        setMessages(prev => [...prev, optimisticMessage].sort((a, b) => 
+          new Date(a.date_created).getTime() - new Date(b.date_created).getTime()
+        ));
+      }
 
       // Also persist to Directus
       await sendDirectusMessage({
