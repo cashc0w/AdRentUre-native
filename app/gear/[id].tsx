@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, Image, TouchableOpacity, Dimensions, ActivityIndicator, Platform, TextInput } from 'react-native'
+import { View, Text, ScrollView, Image, TouchableOpacity, Dimensions, ActivityIndicator, Platform, TextInput, Modal, Pressable } from 'react-native'
 import DateTimePicker from '@react-native-community/datetimepicker'
 import React, { useEffect, useState } from 'react'
 import { Router, useLocalSearchParams, useRouter } from 'expo-router'
@@ -26,8 +26,8 @@ export default function GearDetail() {
   const [message, setMessage] = useState('')
   const [listing, setListing] = useState<DirectusGearListing | null>(null)
   const [error, setError] = useState<Error | null>(null)
-  const [showStartDatePicker, setShowStartDatePicker] = React.useState(false);
-  const [showEndDatePicker, setShowEndDatePicker] = React.useState(false);
+  const [showStartDatePicker, setShowStartDatePicker] = useState(false);
+  const [showEndDatePicker, setShowEndDatePicker] = useState(false);
 
   const { submitRequest, loading: submitting, error: submitError } = useRentalRequest({
     onSuccess: () => {
@@ -86,32 +86,18 @@ export default function GearDetail() {
     return date.toLocaleDateString();
   };
 
-  // Handle date picker changes with proper event handling
   const handleStartDateChange = (event: any, selectedDate?: Date) => {
-    if (Platform.OS === 'android') {
-      setShowStartDatePicker(false);
-    }
-    if (selectedDate) {
+    setShowStartDatePicker(false);
+    if (event.type === 'set' && selectedDate) {
       setStartDate(selectedDate);
     }
   };
 
   const handleEndDateChange = (event: any, selectedDate?: Date) => {
-    if (Platform.OS === 'android') {
-      setShowEndDatePicker(false);
-    }
-    if (selectedDate) {
+    setShowEndDatePicker(false);
+    if (event.type === 'set' && selectedDate) {
       setEndDate(selectedDate);
     }
-  };
-
-  // For iOS, we need to handle the confirm/cancel actions
-  const confirmStartDate = () => {
-    setShowStartDatePicker(false);
-  };
-
-  const confirmEndDate = () => {
-    setShowEndDatePicker(false);
   };
 
   const handleSubmit = async () => {
@@ -399,43 +385,23 @@ export default function GearDetail() {
 
               {/* Native Date Pickers for Mobile */}
               {Platform.OS !== 'web' && showStartDatePicker && (
-                <View>
-                  <DateTimePicker
-                    value={startDate || new Date()}
-                    mode="date"
-                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                    onChange={handleStartDateChange}
-                    minimumDate={new Date()}
-                  />
-                  {Platform.OS === 'ios' && (
-                    <TouchableOpacity
-                      onPress={confirmStartDate}
-                      className="bg-blue-500 py-2 px-4 rounded mt-2"
-                    >
-                      <Text className="text-white text-center">Confirm</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
+                <DateTimePicker
+                  value={startDate || new Date()}
+                  mode="date"
+                  display="default"
+                  onChange={handleStartDateChange}
+                  minimumDate={new Date()}
+                />
               )}
 
               {Platform.OS !== 'web' && showEndDatePicker && (
-                <View>
-                  <DateTimePicker
-                    value={endDate || startDate || new Date()}
-                    mode="date"
-                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                    onChange={handleEndDateChange}
-                    minimumDate={startDate || new Date()}
-                  />
-                  {Platform.OS === 'ios' && (
-                    <TouchableOpacity
-                      onPress={confirmEndDate}
-                      className="bg-blue-500 py-2 px-4 rounded mt-2"
-                    >
-                      <Text className="text-white text-center">Confirm</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
+                <DateTimePicker
+                  value={endDate || startDate || new Date()}
+                  mode="date"
+                  display="default"
+                  onChange={handleEndDateChange}
+                  minimumDate={startDate || new Date()}
+                />
               )}
 
               {/* Message Input */}

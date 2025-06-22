@@ -22,7 +22,8 @@ import {
   Alert,
   ActivityIndicator,
   Image,
-  Pressable
+  Pressable,
+  Platform
 } from 'react-native'
 import { Picker } from '@react-native-picker/picker'
 
@@ -123,38 +124,62 @@ function RentalRequestsSection({ clientId }: { clientId: string }) {
 
   const { submitReview, loading: reviewLoading } = useCreateReview({
     onSuccess: () => {
+      if(Platform.OS !== 'web'){
       Alert.alert('Success', 'Review submitted successfully!');
+      }
       setReviewData({ rating: 5, comment: '' });
       refetchRequests();
     }
   });
 
   const handleStatusChange = async (requestId: string, newStatus: 'approved' | 'rejected' | 'completed') => {
-    Alert.alert(
-      'Confirm Action',
-      `Are you sure you want to mark this request as ${newStatus}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Confirm',
-          onPress: async () => {
-            try {
-              await updateStatus(requestId, newStatus);
-              updateRequestStatus(requestId, newStatus);
-            } catch (error) {
-              console.error('Error updating status:', error);
-              Alert.alert('Error', 'Failed to update request status. Please try again.');
-            }
-          }
+    console.log("trying to update status on request #" + requestId)
+    
+    console.log(`Would show alert: Are you sure you want to mark this request as ${newStatus}?`)
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm(`Are you sure you want to mark this request as ${newStatus}?`)
+      if(confirmed){
+        try {
+          await updateStatus(requestId, newStatus);
+          updateRequestStatus(requestId, newStatus);
+        } catch (error) {
+          console.error('Error updating status:', error);
+        
         }
-      ]
-    );
+      }
+    } else {
+      Alert.alert(
+          'Confirm Action',
+          `Are you sure you want to mark this request as ${newStatus}?`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Confirm',
+              onPress: async () => {
+                try {
+                  await updateStatus(requestId, newStatus);
+                  updateRequestStatus(requestId, newStatus);
+                } catch (error) {
+                  console.error('Error updating status:', error);
+                  Alert.alert('Error', 'Failed to update request status. Please try again.');
+                }
+              }
+            }
+          ]
+        );
+    }
+
   };
 
   const handleReviewSubmit = async (request: DirectusRentalRequest) => {
     if (!reviewData.comment) {
+      if(Platform.OS === 'web' ){
+        window.alert('Please enter a comment for your review.')
+      } else {
       Alert.alert('Error', 'Please enter a comment for your review.');
+      }
       return;
+
     }
 
     try {
@@ -176,7 +201,12 @@ function RentalRequestsSection({ clientId }: { clientId: string }) {
       });
     } catch (error) {
       console.error('Error submitting review:', error);
-      Alert.alert('Error', 'Failed to submit review. Please try again.');
+      if(Platform.OS === 'web' ){
+        window.alert('Failed to submit review. Please try again.')
+      } else {
+        Alert.alert('Error', 'Failed to submit review. Please try again.');
+      }
+      
     }
   };
 
@@ -369,15 +399,17 @@ function RentalRequestsSection({ clientId }: { clientId: string }) {
                             </View>
                             <View>
                               <Text className="block text-sm font-medium text-gray-700 mb-1">Comment</Text>
-                              <TextInput
-                                value={reviewData.comment}
-                                onChangeText={(text) => setReviewData(prev => ({ ...prev, comment: text }))}
-                                multiline
-                                numberOfLines={3}
-                                className="border border-gray-300 rounded-md p-3 text-gray-900"
-                                placeholder="Write your review here..."
-                                placeholderTextColor="#9CA3AF"
-                              />
+                              <Pressable onPress={(e) => e.stopPropagation()}>
+                                <TextInput
+                                  value={reviewData.comment}
+                                  onChangeText={(text) => setReviewData(prev => ({ ...prev, comment: text }))}
+                                  multiline
+                                  numberOfLines={3}
+                                  className="border border-gray-300 rounded-md p-3 text-gray-900"
+                                  placeholder="Write your review here..."
+                                  placeholderTextColor="#9CA3AF"
+                                />
+                              </Pressable>
                             </View>
                             <TouchableOpacity
                               onPress={() => handleReviewSubmit(request)}
@@ -407,7 +439,7 @@ export default function ProfilePage() {
   const router = useRouter()
   const params = useLocalSearchParams()
   const id = params?.id as string
-  const { user } = useAuth()
+  const { user, logout } = useAuth()
   const [client, setClient] = useState<DirectusClientUser | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
@@ -477,6 +509,16 @@ export default function ProfilePage() {
 
   const isOwnProfile = user?.id && client?.user?.id && (user.id === client.user.id)
 
+  const handleLogout = async () => {
+    try {
+      await logout();
+      router.replace('/auth');
+    } catch (error) {
+      console.error('Logout error:', error);
+      Alert.alert('Error', 'Failed to logout. Please try again.');
+    }
+  };
+
   return (
     <ScrollView className="flex-1 bg-gray-50">
       <View className="px-4 py-8">
@@ -494,7 +536,14 @@ export default function ProfilePage() {
                 {client?.first_name || ''} {client?.last_name || ''}
               </Text>
             </View>
-            {/* here, There should be a gear button on the right side that links to /settings only if isOwnProfile */}
+            {isOwnProfile && (
+              <TouchableOpacity
+                onPress={handleLogout}
+                className="bg-red-600 px-4 py-2 rounded-lg"
+              >
+                <Text className="text-white font-medium">Logout</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
         {/* Reviews */}
