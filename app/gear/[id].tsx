@@ -28,6 +28,10 @@ export default function GearDetail() {
   const [error, setError] = useState<Error | null>(null)
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
   const [showEndDatePicker, setShowEndDatePicker] = useState(false);
+  
+  const [isDatePickerModalVisible, setDatePickerModalVisible] = useState(false);
+  const [datePickerTarget, setDatePickerTarget] = useState<'start' | 'end' | null>(null);
+  const [tempDate, setTempDate] = useState<Date>(new Date());
 
   const { submitRequest, loading: submitting, error: submitError } = useRentalRequest({
     onSuccess: () => {
@@ -86,18 +90,58 @@ export default function GearDetail() {
     return date.toLocaleDateString();
   };
 
-  const handleStartDateChange = (event: any, selectedDate?: Date) => {
-    setShowStartDatePicker(false);
-    if (event.type === 'set' && selectedDate) {
-      setStartDate(selectedDate);
+  const openDatePicker = (target: 'start' | 'end') => {
+    setDatePickerTarget(target);
+    const dateToEdit = target === 'start' ? startDate : endDate;
+    const initialDate = dateToEdit || (target === 'end' ? startDate : new Date()) || new Date();
+    setTempDate(initialDate);
+
+    if (Platform.OS === 'ios') {
+      setDatePickerModalVisible(true);
+    } else {
+      // For Android, we use the default picker which is already a modal
+      setShowStartDatePicker(target === 'start');
+      setShowEndDatePicker(target === 'end');
     }
   };
 
-  const handleEndDateChange = (event: any, selectedDate?: Date) => {
-    setShowEndDatePicker(false);
-    if (event.type === 'set' && selectedDate) {
-      setEndDate(selectedDate);
+  const handleDateChange = (event: any, selectedDate?: Date) => {
+    const isAndroid = Platform.OS === 'android';
+    if (isAndroid) {
+      setShowStartDatePicker(false);
+      setShowEndDatePicker(false);
     }
+
+    if ((isAndroid && event.type === 'set') || !isAndroid) {
+      if (selectedDate) {
+        if (isAndroid) {
+          if (datePickerTarget === 'start') {
+            setStartDate(selectedDate);
+            if (endDate && selectedDate > endDate) setEndDate(null);
+          } else {
+            setEndDate(selectedDate);
+          }
+          setDatePickerTarget(null);
+        } else {
+          setTempDate(selectedDate);
+        }
+      }
+    } else {
+      if (isAndroid) setDatePickerTarget(null);
+    }
+  };
+
+  const confirmDate = () => {
+    if (datePickerTarget === 'start') {
+      setStartDate(tempDate);
+      if (endDate && tempDate > endDate) {
+        setEndDate(null);
+      }
+    } else {
+      setEndDate(tempDate);
+    }
+    setDatePickerModalVisible(false);
+    setDatePickerTarget(null);
   };
 
   const handleSubmit = async () => {
@@ -347,7 +391,7 @@ export default function GearDetail() {
                     />
                   ) : (
                     <TouchableOpacity
-                      onPress={() => setShowStartDatePicker(true)}
+                      onPress={() => openDatePicker('start')}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white"
                     >
                       <Text className={`${startDate ? 'text-blue-500' : 'text-gray-400'}`}>
@@ -371,7 +415,7 @@ export default function GearDetail() {
                     />
                   ) : (
                     <TouchableOpacity
-                      onPress={() => setShowEndDatePicker(true)}
+                      onPress={() => openDatePicker('end')}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white"
                       disabled={!startDate}
                     >
@@ -384,24 +428,58 @@ export default function GearDetail() {
               </View>
 
               {/* Native Date Pickers for Mobile */}
-              {Platform.OS !== 'web' && showStartDatePicker && (
+              {Platform.OS === 'android' && showStartDatePicker && (
                 <DateTimePicker
                   value={startDate || new Date()}
                   mode="date"
                   display="default"
-                  onChange={handleStartDateChange}
+                  onChange={handleDateChange}
                   minimumDate={new Date()}
                 />
               )}
 
-              {Platform.OS !== 'web' && showEndDatePicker && (
+              {Platform.OS === 'android' && showEndDatePicker && (
                 <DateTimePicker
                   value={endDate || startDate || new Date()}
                   mode="date"
                   display="default"
-                  onChange={handleEndDateChange}
+                  onChange={handleDateChange}
                   minimumDate={startDate || new Date()}
                 />
+              )}
+
+              {/* Custom Modal for iOS */}
+              {Platform.OS === 'ios' && (
+                <Modal
+                  animationType="slide"
+                  transparent={true}
+                  visible={isDatePickerModalVisible}
+                  onRequestClose={() => setDatePickerModalVisible(false)}
+                >
+                  <Pressable 
+                    style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' }}
+                    onPress={() => setDatePickerModalVisible(false)}
+                  >
+                    <View style={{ backgroundColor: 'white' }}>
+                      <DateTimePicker
+                        value={tempDate}
+                        mode="date"
+                        display="inline"
+                        onChange={handleDateChange}
+                        minimumDate={datePickerTarget === 'end' ? startDate || new Date() : new Date()}
+                        themeVariant="light"
+                        style={{ height: 350 }}
+                      />
+                      
+                      <TouchableOpacity
+                        onPress={confirmDate}
+                        style={{ backgroundColor: '#22c55e', padding: 20, alignItems: 'center' }}
+                      >
+                        <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>Confirm</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </Pressable>
+                </Modal>
               )}
 
               {/* Message Input */}
