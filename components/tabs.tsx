@@ -28,11 +28,12 @@ const MailIconWithBadge = ({ color, size, badgeCount }: { color: string; size: n
             justifyContent: 'center',
             paddingLeft: 3,
             paddingRight: 4,
-          }}
-          className="text-xs font-bold text-white ">
-          {badgeCount > 99 ? '99+' : badgeCount.toString()}
+          }}>
+          <Text className="text-xs font-bold text-white"> {badgeCount > 99 ? '99+' : badgeCount.toString()} </Text>
+          
         </View>
       )}
+      
     </View>
   );
 };
