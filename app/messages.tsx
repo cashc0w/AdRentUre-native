@@ -87,6 +87,10 @@ const Messages = () => {
     }
   }, [conversations, selectedConversation]);
 
+  const onConversationSelect = (conversation: DirectusConversation) => {
+    setSelectedConversation(conversation);
+    
+  }
   const handleSendMessage = async () => {
     if (!newMessage.trim() || !selectedConversation) return;
 

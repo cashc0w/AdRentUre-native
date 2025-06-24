@@ -326,9 +326,9 @@ function calculateDistance(
   const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos(lat1 * (Math.PI / 180)) *
-      Math.cos(lat2 * (Math.PI / 180)) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
+    Math.cos(lat2 * (Math.PI / 180)) *
+    Math.sin(dLon / 2) *
+    Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c; // Distance in kilometers
 }
@@ -609,7 +609,7 @@ export const createGearListing = async (data: {
         try {
           console.log(`Uploading image ${index + 1}/${totalImages}`);
           const formData = new FormData();
-          
+
           // Handle both web File objects and mobile image objects
           if (image instanceof File) {
             formData.append("file", image);
@@ -642,7 +642,7 @@ export const createGearListing = async (data: {
           const fileData = await response.json();
           uploadedImages++;
           console.log(`Progress: ${uploadedImages}/${totalImages} images uploaded`);
-          
+
           return fileData.data.id;
         } catch (error) {
           console.error(`Error uploading image ${index + 1}:`, error);
@@ -957,23 +957,26 @@ export const updateRentalRequestStatus = async (
       })
     );
     console.log('Status update response:', response);
-    
+
     try {
       const currentRequest = await getRentalRequest(requestId);
       console.log('Current request after update:', currentRequest);
-      
-      // Determine which user should receive the notification
-      const recipientId =
-        status === "approved" || status === "rejected"
-          ? currentRequest.renter.id
-          : currentRequest.owner.id;
 
-      // Create and publish notification
-      await createAndPublishNotification({
-        client: recipientId,
-        request: currentRequest.id,
-      });
-      console.log('Notification sent to:', recipientId);
+      if (status !== "completed") {
+        // Determine which user should receive the notification
+        const recipientId =
+          status === "approved" || status === "rejected"
+            ? currentRequest.renter.id
+            : currentRequest.owner.id;
+
+        // Create and publish notification
+        await createAndPublishNotification({
+          client: recipientId,
+          request: currentRequest.id,
+        });
+        console.log('Notification sent to:', recipientId);
+      }
+
     } catch (error) {
       console.error("Error sending notification:", error);
     }
@@ -1171,18 +1174,18 @@ export const getNotifications = async (clientID: string) => {
         sort: ["-date_created"],
       })
     )) as DirectusNotification[];
-    
+
     // Then batch fetch the related conversations and requests with permissions issue tracking
     const relationshipPromises = {
       conversations: [] as Promise<any>[],
       requests: [] as Promise<any>[],
     };
-    
+
     const relationshipResults = {
       conversations: {} as Record<string, any>,
       requests: {} as Record<string, any>,
     };
-    
+
     // Collect conversation and request IDs and prepare batch fetches
     for (const notification of notifications) {
       if (notification.conversation) {
@@ -1193,16 +1196,16 @@ export const getNotifications = async (clientID: string) => {
               fields: ["*", "user_1.*", "user_2.*", "user_1.user.*", "user_2.user.*", "gear_listing.*"],
             })
           )
-          .then(data => {
-            relationshipResults.conversations[id] = data;
-          })
-          .catch(err => {
-            console.error(`Failed to fetch conversation ${id}:`, err);
-            relationshipResults.conversations[id] = { id, error: true };
-          })
+            .then(data => {
+              relationshipResults.conversations[id] = data;
+            })
+            .catch(err => {
+              console.error(`Failed to fetch conversation ${id}:`, err);
+              relationshipResults.conversations[id] = { id, error: true };
+            })
         );
       }
-      
+
       if (notification.request) {
         const id = String(notification.request);
         relationshipPromises.requests.push(
@@ -1211,35 +1214,35 @@ export const getNotifications = async (clientID: string) => {
               fields: ["*", "gear_listing.*", "renter.*", "owner.*"],
             })
           )
-          .then(data => {
-            relationshipResults.requests[id] = data;
-          })
-          .catch(err => {
-            console.error(`Failed to fetch request ${id}:`, err);
-            relationshipResults.requests[id] = { id, error: true };
-          })
+            .then(data => {
+              relationshipResults.requests[id] = data;
+            })
+            .catch(err => {
+              console.error(`Failed to fetch request ${id}:`, err);
+              relationshipResults.requests[id] = { id, error: true };
+            })
         );
       }
     }
-    
+
     // Wait for all promises to settle (regardless of success/failure)
     await Promise.allSettled([
       ...relationshipPromises.conversations,
       ...relationshipPromises.requests
     ]);
-    
+
     // Merge the results
     const enrichedNotifications = notifications.map(notification => {
       const conversationId = notification.conversation ? String(notification.conversation) : null;
       const requestId = notification.request ? String(notification.request) : null;
-      
+
       return {
         ...notification,
         conversation: conversationId ? relationshipResults.conversations[conversationId] || null : null,
         request: requestId ? relationshipResults.requests[requestId] || null : null,
       };
     });
-    
+
     //console.log("Enriched notifications:", enrichedNotifications);
     return enrichedNotifications;
   } catch (error) {
@@ -1248,12 +1251,12 @@ export const getNotifications = async (clientID: string) => {
   }
 };
 export const getMessageNotifications = async (clientID: string) => {
-  try{
+  try {
     const allCLientNotifictions = await getNotifications(clientID);
     const messageNotifications = allCLientNotifictions.filter(
       (notification) => notification.conversation)
     return messageNotifications;
-    } catch (error) {
+  } catch (error) {
     console.error("Error in notification processing:", error);
     return [];
   }
