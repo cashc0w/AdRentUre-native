@@ -1,4 +1,3 @@
-import Mapbox from '@rnmapbox/maps';
 import { Platform } from 'react-native';
 import { directus } from './directus';
 import Constants from 'expo-constants';
@@ -17,6 +16,7 @@ export const initializeMapbox = (accessToken: string) => {
   }
 
   try {
+    const Mapbox = require('@rnmapbox/maps');
     if (!accessToken) {
       console.error('Mapbox access token is missing');
       return;
@@ -28,11 +28,11 @@ export const initializeMapbox = (accessToken: string) => {
     }
 
     console.log('Initializing Mapbox with token:', accessToken.substring(0, 5) + '...');
-    Mapbox.setAccessToken(accessToken);
+    Mapbox.default.setAccessToken(accessToken);
     
     // Set up platform-specific configurations
     if (Platform.OS === 'android') {
-      Mapbox.setTelemetryEnabled(false);
+      Mapbox.default.setTelemetryEnabled(false);
     }
 
     isInitialized = true;
