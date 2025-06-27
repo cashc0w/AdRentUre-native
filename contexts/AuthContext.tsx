@@ -55,7 +55,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log('Current user:', currentUser);
       setUser(currentUser);
     } catch (err) {
-      console.error('Auth check error:', err);
+      console.log('Auth check error:', err);
       // Clear potentially invalid token
       await AsyncStorage.removeItem('auth_token');
       setUser(null);

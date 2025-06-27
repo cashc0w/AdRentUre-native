@@ -278,7 +278,7 @@ export async function getCurrentUser(): Promise<DirectusUser> {
 
     return response as DirectusUser;
   } catch (error) {
-    console.error("Error getting current user:", error);
+    console.log("Error getting current user:", error);
     throw new Error("Failed to get current user");
   }
 }
@@ -916,7 +916,7 @@ export const getCurrentClient = async () => {
     const client = await getClientWithUserID(currentUser.id);
     return client;
   } catch (error) {
-    console.error("Error getting current client:", error);
+    console.log("Error getting current client:", error);
     return null;
   }
 };
@@ -1325,7 +1325,7 @@ export async function geocodeAddress(address: string): Promise<{ latitude: numbe
       radius: 5, // or whatever default you want
     };
   } catch (error) {
-    console.error('Geocoding error:', error);
+    console.log('Geocoding error:', error);
     throw error;
   }
 }
