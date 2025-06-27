@@ -25,7 +25,7 @@ import {
   Pressable,
   Platform
 } from 'react-native'
-import { Picker } from '@react-native-picker/picker'
+import StarRating from '../../components/StarRating'
 
 // Reviews component that only renders when we have a clientId
 function ReviewsSection({ clientId }: { clientId: string }) {
@@ -36,6 +36,8 @@ function ReviewsSection({ clientId }: { clientId: string }) {
   } = useReviews({
     clientId: clientId
   })
+
+  console.log("reviews" + reviews)
 
   if (reviewsLoading) {
     return <Text className="text-gray-500">Loading reviews...</Text>
@@ -78,7 +80,7 @@ function ReviewsSection({ clientId }: { clientId: string }) {
                     </View>
                   </View>
                   <Text className="text-gray-500 text-sm">
-                    {new Date().toLocaleDateString()}
+                    {review.date_created.split("T")[0]}
                   </Text>
                 </View>
                 <Text className="text-gray-600">{review.comment}</Text>
@@ -385,17 +387,12 @@ function RentalRequestsSection({ clientId }: { clientId: string }) {
                           <View className="space-y-4">
                             <View>
                               <Text className="block text-sm font-medium text-gray-700 mb-1">Rating</Text>
-                              <View className="border border-gray-300 rounded-md">
-                                <Picker
-                                  selectedValue={reviewData.rating}
-                                  onValueChange={(value) => setReviewData(prev => ({ ...prev, rating: value }))}
-                                  style={{ height: 50 }}
-                                >
-                                  {[1, 2, 3, 4, 5].map((num) => (
-                                    <Picker.Item key={num} label={`${num} Star${num !== 1 ? 's' : ''}`} value={num} />
-                                  ))}
-                                </Picker>
-                              </View>
+                              <Pressable onPress={(e) => e.stopPropagation()}>
+                                <StarRating
+                                  rating={reviewData.rating}
+                                  onRatingChange={(newRating) => setReviewData(prev => ({ ...prev, rating: newRating }))}
+                                />
+                              </Pressable>
                             </View>
                             <View>
                               <Text className="block text-sm font-medium text-gray-700 mb-1">Comment</Text>

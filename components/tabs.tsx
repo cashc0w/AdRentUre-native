@@ -69,12 +69,14 @@ function TabNavigation() {
 
   return (
     <Tabs
+      initialRouteName="about"
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: '#16a34a',
         tabBarInactiveTintColor: 'gray',
       }}
     >
+      <Tabs.Screen name="index" options={{ href: null }} />
       <Tabs.Screen
         name="about"
         options={{
