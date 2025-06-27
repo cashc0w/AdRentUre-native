@@ -3,24 +3,90 @@ import {
   rest,
   authentication,
   login,
+  refresh,
   readItem,
   readItems,
   createItem,
   updateItem,
-  deleteItem,
+  deleteItem as deleteDirectusItem,
   readAssetRaw,
   createUser,
   readMe,
   uploadFiles,
   auth,
   updateItems,
+  type AuthenticationClient,
+  type AuthenticationData,
+  staticToken,
+  logout as sdkLogout,
 } from "@directus/sdk";
 import { read } from "fs";
 import { get } from "http";
 import { geocode, Location } from "./mapbox";
 import { publishMessage } from "./ably";
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
+import * as SecureStore from 'expo-secure-store';
 import * as Crypto from 'expo-crypto';
+import { get as getStoreValue } from 'svelte/store';
+
+type AppSchema = {
+  gear_listings: DirectusGearListing[];
+  rental_requests: DirectusRentalRequest[];
+  reviews: DirectusReview[];
+  clients: DirectusClientUser[];
+  conversations: DirectusConversation[];
+  messages: DirectusMessage[];
+  notifications: DirectusNotification[];
+  directus_users: DirectusUser[];
+};
+
+let isRefreshing = false;
+let refreshPromise: Promise<boolean> | null = null;
+
+// Cross-platform token storage helpers
+const setItem = async (key: string, value: string) => {
+  if (Platform.OS === 'web') {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(key, value);
+      }
+    } catch (e) {
+      console.error('Local storage is unavailable:', e);
+    }
+  } else {
+    await SecureStore.setItemAsync(key, value);
+  }
+};
+
+const getItem = async (key: string): Promise<string | null> => {
+  if (Platform.OS === 'web') {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        return localStorage.getItem(key);
+      }
+      return null;
+    } catch (e) {
+      console.error('Local storage is unavailable:', e);
+      return null;
+    }
+  } else {
+    return await SecureStore.getItemAsync(key);
+  }
+};
+
+const deleteItem = async (key: string) => {
+  if (Platform.OS === 'web') {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem(key);
+      }
+    } catch (e) {
+      console.error('Local storage is unavailable:', e);
+    }
+  } else {
+    await SecureStore.deleteItemAsync(key);
+  }
+};
 
 // Use the correct Directus URL directly
 const DIRECTUS_URL = "https://creative-blini-b15912.netlify.app";
@@ -133,12 +199,6 @@ interface DirectusResponse<T> {
   };
 }
 
-export interface AuthenticationData {
-  access_token: string;
-  refresh_token: string;
-  expires: number;
-}
-
 interface MapboxGeocodingResponse {
   features: Array<{
     center: [number, number]; // [longitude, latitude]
@@ -148,26 +208,45 @@ interface MapboxGeocodingResponse {
   }>;
 }
 
-// Initialize the Directus client with error handling
-export const directus = (() => {
-  try {
-    console.log('Initializing Directus client...');
-    const client = createDirectus(DIRECTUS_URL)
-      .with(authentication("json"))
-      .with(rest());
-    console.log('Directus client initialized successfully');
-    return client;
-  } catch (error) {
-    console.error('Error initializing Directus client:', error);
-    throw new Error('Failed to initialize Directus client');
-  }
-})();
+// Initialize the Directus client with a manual interceptor for token refresh.
+export const directus = createDirectus(DIRECTUS_URL)
+  .with(authentication('json'))
+  .with(rest({
+    onResponse: async (response, options) => {
+      const retry = () => options as any;
+
+      // Only handle 401 errors for routes that are not the refresh route itself
+      if (response.status === 401 && !(options as any).path?.includes('auth/refresh')) {
+        // If a refresh isn't already in progress, start one.
+        if (!refreshPromise) {
+          console.log('Token expired, starting refresh...');
+          refreshPromise = refreshAuth();
+        }
+
+        console.log('A request is waiting for the token to be refreshed...');
+        const refreshed = await refreshPromise;
+        refreshPromise = null; // Reset for the next time a refresh is needed.
+
+        if (refreshed) {
+          console.log('Token was refreshed, retrying original request...');
+          // The token is now set on the client, so we can retry the original request.
+          return directus.request(retry);
+        } else {
+          console.log('Token refresh failed, the original request will not be retried.');
+        }
+      }
+
+      return response;
+    },
+  }));
 
 // Create a public client instance for unauthenticated requests
 export const publicClient = (() => {
   try {
     console.log('Initializing public Directus client...');
-    const client = createDirectus(DIRECTUS_URL).with(rest());
+    const client = createDirectus(DIRECTUS_URL)
+      .with(authentication('json'))
+      .with(rest());
     console.log('Public Directus client initialized successfully');
     return client;
   } catch (error) {
@@ -180,22 +259,54 @@ export const publicClient = (() => {
 export const loginUser = async (email: string, password: string) => {
   try {
     console.log('Attempting to login user...');
-    // Use the SDK's login method directly
-    const loginResult = await directus.request(login(email, password));
-    console.log('Login request successful');
 
-    // Store the token
-    if (loginResult?.access_token) {
-      console.log('Setting token in Directus client...');
-      await directus.setToken(loginResult.access_token);
-      console.log('Setting token in AsyncStorage...');
-      await AsyncStorage.setItem('auth_token', loginResult.access_token);
-      console.log('Token stored successfully');
-    } else {
-      console.warn('No access token received from login');
+    // 1. Log in and get tokens using a direct fetch call.
+    // NOTE: We are using a direct fetch call here instead of the Directus SDK's login()
+    // function because the SDK was consistently failing to retrieve the refresh_token,
+    // even with correct server permissions and client configuration. This direct
+    // approach is proven to work reliably.
+    const response = await fetch(`${DIRECTUS_URL}/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        email,
+        password,
+        // We explicitly ask for the token in the response, although this is default
+        mode: 'json' 
+      }),
+    });
+
+    const json = await response.json();
+
+    if (!response.ok) {
+      const errorMessage = json.errors?.[0]?.message || 'Login request failed';
+      throw new Error(errorMessage);
+    }
+    
+    const authResponse = json.data;
+    console.log('Auth response from server:', authResponse);
+
+    if (!authResponse.access_token || !authResponse.refresh_token) {
+      console.log('Tokens received:', {
+        hasAccessToken: !!authResponse.access_token,
+        hasRefreshToken: !!authResponse.refresh_token
+      });
+      throw new Error("Login did not return valid tokens.");
     }
 
-    return loginResult;
+    // 2. Save tokens securely
+    await setItem('auth_token', authResponse.access_token);
+    await setItem('auth_refresh_token', authResponse.refresh_token);
+
+    // 3. Set the token on the client for immediate use
+    directus.setToken(authResponse.access_token);
+
+    // 4. Fetch user data with the now-authenticated client
+    console.log('Login successful, fetching user data...');
+    const user = await directus.request(readMe());
+    return user as DirectusUser;
   } catch (error) {
     console.error("Login error:", error);
     throw error;
@@ -254,25 +365,66 @@ export const register = async (
 export const logout = async () => {
   try {
     console.log("Starting logout process...");
-    console.log("Removing token from AsyncStorage...");
-    await AsyncStorage.removeItem("auth_token");
-    console.log("Clearing token in Directus client...");
-    await directus.setToken(null);
-    console.log("Logout successful");
+    const refreshToken = await getItem('auth_refresh_token');
+
+    if (refreshToken) {
+      try {
+        // Best practice: invalidate the refresh token on the server.
+        await publicClient.request(sdkLogout(refreshToken));
+        console.log("Server session successfully ended.");
+      } catch (serverError) {
+        // Don't block the logout if the server call fails.
+        // The token might already be expired or invalid, which is fine.
+        console.warn("Could not invalidate token on server during logout. This can happen if the token is already expired.", serverError);
+      }
+    }
+  } catch(e) {
+    console.error("Error during server logout, proceeding with local cleanup:", e);
+  } finally {
+    // Always clear local data to complete the logout on the client side.
+    console.log("Clearing local tokens...");
+    await deleteItem("auth_token");
+    await deleteItem('auth_refresh_token');
+    directus.setToken(null);
+    console.log("Local logout successful.");
+  }
+};
+
+export const refreshAuth = async () => {
+  try {
+    const refreshToken = await getItem('auth_refresh_token');
+    if (!refreshToken) {
+      throw new Error('No refresh token available.');
+    }
+
+    const refreshResult = await directus.request(refresh('json', refreshToken));
+
+    if (!refreshResult.access_token || !refreshResult.refresh_token) {
+      throw new Error("Refresh did not return valid tokens.");
+    }
+
+    await setItem('auth_token', refreshResult.access_token);
+    await setItem('auth_refresh_token', refreshResult.refresh_token);
+    directus.setToken(refreshResult.access_token);
+
+    console.log('Token refresh successful.');
+    return true;
   } catch (error) {
-    console.error("Logout error:", error);
-    throw new Error("Failed to logout");
+    console.error('Token refresh error:', error);
+    await logout(); // Log out user if refresh fails
+    return false;
   }
 };
 
 export async function getCurrentUser(): Promise<DirectusUser> {
   try {
-    console.log('Getting current user...');
-    const token = await directus.getToken();
+    const token = await getItem('auth_token');
     if (!token) {
-      console.warn('No token available when getting current user');
       throw new Error('Not authenticated');
     }
+    directus.setToken(token);
+
+    console.log('Getting current user...');
     const response = await directus.request(readMe());
     console.log('Current user fetched successfully');
 

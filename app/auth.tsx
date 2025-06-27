@@ -20,8 +20,10 @@ import { useAuth } from '../contexts/AuthContext';
 import { register } from '../lib/directus';
 import { autocompleteAddress } from '../lib/mapbox';
 import "../globals.css";
+import { Redirect } from 'expo-router';
 
 export default function AuthScreen() {
+  const { user, loading: authLoading } = useAuth();
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -35,6 +37,14 @@ export default function AuthScreen() {
 
   const { login } = useAuth();
   const router = useRouter();
+
+  if (authLoading) {
+    return null;
+  }
+  
+  if (user) {
+    return <Redirect href="/gear" />;
+  }
 
   const handleAuth = async () => {
     try {
