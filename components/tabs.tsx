@@ -9,8 +9,6 @@ import { getMessageNotifications } from '../lib/directus'; // Adjust the import 
 
 // Custom component for the mail icon with badge
 const MailIconWithBadge = ({ color, size, badgeCount }: { color: string; size: number; badgeCount: number }) => {
-  console.log('Badge count:', badgeCount);
-  console.log('Color:', color);
   return (
     <View className="relative w-15 h-6 items-center justify-center">
       <Ionicons name="mail-outline" size={size} color={color} />
@@ -69,12 +67,14 @@ function TabNavigation() {
 
   return (
     <Tabs
+      initialRouteName="about"
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: '#16a34a',
         tabBarInactiveTintColor: 'gray',
       }}
     >
+      <Tabs.Screen name="index" options={{ href: null }} />
       <Tabs.Screen
         name="about"
         options={{
@@ -114,7 +114,7 @@ function TabNavigation() {
         name="profile"
         options={{
           title: '',//'Profile', 
-          href: user ? `/profile/${client?.id}` : null,
+          href: user && client?.id ? `/profile/${client.id}` : null,
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="person-outline" size={size} color={color} />
           ),

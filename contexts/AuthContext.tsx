@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import { loginUser, logout, getCurrentUser } from '../lib/directus';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { directus, loginUser, logout, getCurrentUser } from '../lib/directus';
+import * as SecureStore from 'expo-secure-store';
 
 interface User {
   id: string;
@@ -40,24 +40,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const checkAuth = async () => {
     console.log('Checking auth...');
     try {
-      const token = await AsyncStorage.getItem('auth_token');
-      console.log('Token found:', token ? 'yes' : 'no');
-      
-      if (!token) {
-        console.log('No token found, setting user to null');
-        setUser(null);
-        setLoading(false);
-        return;
-      }
-      
-      console.log('Getting current user...');
+      // getCurrentUser now handles token retrieval and setting internally.
+      // The onResponse interceptor in the directus client handles refreshing.
       const currentUser = await getCurrentUser();
-      console.log('Current user:', currentUser);
+      console.log('Auth check successful, user is logged in.');
       setUser(currentUser);
     } catch (err) {
-      console.error('Auth check error:', err);
-      // Clear potentially invalid token
-      await AsyncStorage.removeItem('auth_token');
+      console.log('Auth check failed, user is not logged in.');
       setUser(null);
     } finally {
       setLoading(false);
@@ -71,10 +60,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setError(null);
       
       console.log('Calling loginUser...');
-      await loginUser(email, password);
+      const currentUser = await loginUser(email, password);
       
-      console.log('Getting current user after login...');
-      const currentUser = await getCurrentUser();
       console.log('Login successful, current user:', currentUser);
       
       setUser(currentUser);

@@ -1,11 +1,22 @@
 import { StyleSheet, Text, View, ScrollView, TouchableOpacity, ImageBackground } from 'react-native'
 import React from 'react'
 import "../globals.css";
-import { Link } from 'expo-router';
+import { Link, Redirect } from 'expo-router';
+import { useAuth } from '../contexts/AuthContext';
 
 
 const About = () => {
+  const { user, loading } = useAuth();
+
+  // While checking auth, render nothing to prevent flicker
+  if (loading) {
+    return null;
+  }
   
+  // If user is logged in, redirect away from this marketing page
+  if (user) {
+    return <Redirect href="/gear" />;
+  }
 
   return (
     <ScrollView className="flex-1 bg-white">

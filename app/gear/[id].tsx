@@ -8,6 +8,7 @@ import { formatDistanceToNow, set } from 'date-fns'
 import { initializeMapbox, MAPBOX_TOKEN, isExpoGo } from '../../lib/mapbox'
 import { DirectusUser } from '@directus/sdk'
 import { useRentalRequest } from '../../hooks/useCreateRentalRequest'
+import WebMap from '../../components/WebMap'
 
 const { width } = Dimensions.get('window')
 
@@ -302,7 +303,9 @@ export default function GearDetail() {
         <View className="mt-6">
           <Text className="text-lg font-semibold text-gray-900 mb-2">Location</Text>
           <View className="h-48 rounded-lg overflow-hidden">
-            {!isExpoGo && Platform.OS !== 'web' && mapboxInitialized && MapView ? (
+            {Platform.OS === 'web' ? (
+              <WebMap gear={gear} />
+            ) : !isExpoGo && mapboxInitialized && MapView ? (
               <MapView
                 style={{ flex: 1 }}
                 styleURL={require('@rnmapbox/maps').StyleURL.Street}
@@ -329,9 +332,7 @@ export default function GearDetail() {
                 <Text className="text-gray-500">
                   {isExpoGo
                     ? 'Map not available in Expo Go'
-                    : Platform.OS === 'web'
-                      ? 'Map not available on web'
-                      : 'Loading map...'}
+                    : 'Loading map...'}
                 </Text>
               </View>
             )}
@@ -468,7 +469,7 @@ export default function GearDetail() {
                         onChange={handleDateChange}
                         minimumDate={datePickerTarget === 'end' ? startDate || new Date() : new Date()}
                         themeVariant="light"
-                        style={{ height: 350 }}
+                        style={{ height: 35 }}
                       />
                       
                       <TouchableOpacity
