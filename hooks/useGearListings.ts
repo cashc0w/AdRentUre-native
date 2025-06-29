@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { getGearListings, directus, type DirectusGearListing, type DirectusUser } from "../lib/directus";
 import { readMe } from "@directus/sdk";
+import { useAuth } from "../contexts/AuthContext";
 
 export type SortOption =
   | "price_asc"
@@ -34,6 +35,7 @@ export function useGearListings({
   userLocation,
   enabled = true,
 }: UseGearListingsOptions = {}) {
+  const { user } = useAuth();
   const [listings, setListings] = useState<DirectusGearListing[]>([]);
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<Error | null>(null);
@@ -49,14 +51,6 @@ export function useGearListings({
       }
       try {
         setLoading(true);
-
-        // First, get the current user. This will handle auth state.
-        let currentUser: DirectusUser | null = null;
-        try {
-          currentUser = (await directus.request(readMe())) as DirectusUser;
-        } catch (e) {
-          // Ignore error, currentUser will be null for logged-out users
-        }
         
         const response = await getGearListings(
           {
@@ -66,7 +60,7 @@ export function useGearListings({
             sort,
             maxRadius,
           },
-          currentUser // Pass the user to the function
+          user as DirectusUser | null // Pass the user from context to the function
         );
 
         // If we have a search term, filter the listings client-side
@@ -92,7 +86,7 @@ export function useGearListings({
     }
 
     fetchListings();
-  }, [filters, page, itemsPerPage, sort, maxRadius, userLocation, enabled]);
+  }, [filters, page, itemsPerPage, sort, maxRadius, userLocation, enabled, user]);
 
   return {
     listings,
