@@ -213,24 +213,26 @@ export const directus = createDirectus(DIRECTUS_URL)
   .with(authentication('json'))
   .with(rest({
     onResponse: async (response, options) => {
-      const retry = () => options as any;
+      const retry = () => directus.request(options as any);
 
       // Only handle 401 errors for routes that are not the refresh route itself
       if (response.status === 401 && !(options as any).path?.includes('auth/refresh')) {
         // If a refresh isn't already in progress, start one.
-        if (!refreshPromise) {
+        if (!isRefreshing) {
           console.log('Token expired, starting refresh...');
-          refreshPromise = refreshAuth();
+          isRefreshing = true;
+          refreshPromise = refreshAuth().finally(() => {
+            isRefreshing = false;
+            // The original refreshPromise is kept so that all waiting requests can be resolved.
+          });
         }
 
         console.log('A request is waiting for the token to be refreshed...');
         const refreshed = await refreshPromise;
-        refreshPromise = null; // Reset for the next time a refresh is needed.
 
         if (refreshed) {
           console.log('Token was refreshed, retrying original request...');
-          // The token is now set on the client, so we can retry the original request.
-          return directus.request(retry);
+          return retry();
         } else {
           console.log('Token refresh failed, the original request will not be retried.');
         }
@@ -486,34 +488,48 @@ function calculateDistance(
 }
 
 // Modify the getGearListings function
-export const getGearListings = async ({
-  filters,
-  page = 1,
-  limit = 9,
-  sort = "date_created_desc",
-  maxRadius, // in kilometers
-}: {
-  filters?: {
-    category?: string;
-    condition?: string;
-    minPrice?: number;
-    maxPrice?: number;
-    search?: string;
-    owner?: string;
-  };
-  page?: number;
-  limit?: number;
-  sort?: string;
-  maxRadius?: number;
-} = {}) => {
+export const getGearListings = async (
+  {
+    filters,
+    page = 1,
+    limit = 9,
+    sort = "date_created_desc",
+    maxRadius, // in kilometers
+  }: {
+    filters?: {
+      category?: string;
+      condition?: string;
+      minPrice?: number;
+      maxPrice?: number;
+      search?: string;
+      owner?: string;
+    };
+    page?: number;
+    limit?: number;
+    sort?: string;
+    maxRadius?: number;
+  },
+  currentUser: DirectusUser | null // Accept pre-fetched user
+) => {
   try {
+    let userLocation = null;
+    if (currentUser?.location) {
+      try {
+        userLocation = await geocodeAddress(currentUser.location);
+      } catch (e) {
+        console.warn("Could not geocode user address", e);
+      }
+    }
+
+    const client = currentUser ? directus : publicClient;
+
     const filter: any = {};
-    if (filters?.category) filter.category = filters.category;
-    if (filters?.condition) filter.condition = filters.condition;
+    if (filters?.category) filter.category = { _eq: filters.category };
+    if (filters?.condition) filter.condition = { _eq: filters.condition };
     if (filters?.minPrice) filter.price = { _gte: filters.minPrice };
     if (filters?.maxPrice)
       filter.price = { ...filter.price, _lte: filters.maxPrice };
-    if (filters?.owner) filter.owner = filters.owner;
+    if (filters?.owner) filter.owner = { _eq: filters.owner };
 
     // Add search filter if provided
     if (filters?.search && filters.search.trim() !== "") {
@@ -523,7 +539,7 @@ export const getGearListings = async ({
       ];
     }
 
-    let response = (await directus.request(
+    let response = (await client.request(
       readItems("gear_listings", {
         fields: [
           "*",
@@ -547,109 +563,45 @@ export const getGearListings = async ({
 
     console.log("Initial listings count:", response.length);
 
-    // Try to get current user's location for distance-based sorting
-    let userLocation = null;
-    try {
-      const currentUser = await directus.request(readMe());
-      console.log("Current user:", currentUser);
-
-      if (currentUser?.location) {
-        console.log("User's location string:", currentUser.location);
-        try {
-          userLocation = await geocodeAddress(currentUser.location);
-          console.log("Geocoded user location:", userLocation);
-        } catch (geocodeError) {
-          console.warn("Geocoding failed, proceeding without location-based sorting:", geocodeError);
-          // Continue without location-based sorting
-        }
-
-        if (userLocation) {
-          // Add distance to each listing
-          response = await Promise.all(
-            response.map(async (listing) => {
-              try {
-                console.log("Processing listing:", listing.id);
-                console.log("Listing polygon:", listing.polygon);
-
-                const center = calculatePolygonCenter(listing.polygon);
-                console.log("Listing center:", center);
-
-                let distance: number | undefined = undefined;
-                if (center) {
-                  distance = calculateDistance(
-                    userLocation!.latitude,
-                    userLocation!.longitude,
-                    center.lat,
-                    center.lng
-                  );
-                  console.log("Calculated distance:", distance, "km");
-                } else {
-                  console.warn(
-                    `Could not calculate distance for listing ${listing.id} due to invalid polygon data`
-                  );
-                }
-
-                return {
-                  ...listing,
-                  distance,
-                };
-              } catch (listingError) {
-                console.error(`Error processing listing ${listing.id}:`, listingError);
-                return {
-                  ...listing,
-                  distance: undefined,
-                };
-              }
-            })
+    // If we have a user location, calculate distances and sort
+    if (userLocation) {
+      // Add distance to each listing
+      response = response.map((listing) => {
+        const center = calculatePolygonCenter(listing.polygon);
+        let distance: number | undefined = undefined;
+        if (center) {
+          distance = calculateDistance(
+            userLocation!.latitude,
+            userLocation!.longitude,
+            center.lat,
+            center.lng
           );
-
-          // Filter by radius if specified
-          if (maxRadius) {
-            console.log("Filtering by max radius:", maxRadius, "km");
-            const beforeCount = response.length;
-            response = response.filter((listing) => {
-              // Keep listings with valid distances that are within radius
-              // Put listings with invalid distances at the end
-              if (listing.distance === undefined) return true;
-              return listing.distance <= maxRadius;
-            });
-            console.log(
-              "Filtered out",
-              beforeCount - response.length,
-              "listings"
-            );
-          }
-
-          // Sort by distance, putting listings with no distance at the end
-          console.log("Sorting by distance");
-          response = response.sort((a, b) => {
-            if (a.distance === undefined && b.distance === undefined) return 0;
-            if (a.distance === undefined) return 1;
-            if (b.distance === undefined) return -1;
-            return a.distance - b.distance;
-          });
         }
-      } else {
-        console.log("No user location available, using default sort");
-      }
-    } catch (error) {
-      console.warn("Error processing user location, using default sort:", error);
-    }
+        return { ...listing, distance };
+      });
 
-    // If no user location or geocoding failed, apply the requested sort
-    if (!userLocation) {
-      response = response.sort((a, b) => {
+      // Filter by radius if specified
+      if (maxRadius) {
+        response = response.filter(
+          (listing) => listing.distance !== undefined && listing.distance <= maxRadius
+        );
+      }
+
+      // Sort by distance, putting listings with no distance at the end
+      response.sort((a, b) => {
+        if (a.distance === undefined && b.distance === undefined) return 0;
+        if (a.distance === undefined) return 1;
+        if (b.distance === undefined) return -1;
+        return a.distance - b.distance;
+      });
+    } else {
+      // Fallback to default sort if no user location
+      response.sort((a, b) => {
         switch (sort) {
           case "date_created_desc":
-            return (
-              new Date(b.date_created).getTime() -
-              new Date(a.date_created).getTime()
-            );
+            return new Date(b.date_created).getTime() - new Date(a.date_created).getTime();
           case "date_created_asc":
-            return (
-              new Date(a.date_created).getTime() -
-              new Date(b.date_created).getTime()
-            );
+            return new Date(a.date_created).getTime() - new Date(b.date_created).getTime();
           case "price_asc":
             return a.price - b.price;
           case "price_desc":
@@ -1115,22 +1067,19 @@ export const updateRentalRequestStatus = async (
     try {
       const currentRequest = await getRentalRequest(requestId);
       console.log('Current request after update:', currentRequest);
+      
+      // Determine which user should receive the notification
+      const recipientId =
+        status === "approved" || status === "rejected"
+          ? currentRequest.renter.id
+          : currentRequest.owner.id;
 
-      if (status !== "completed") {
-        // Determine which user should receive the notification
-        const recipientId =
-          status === "approved" || status === "rejected"
-            ? currentRequest.renter.id
-            : currentRequest.owner.id;
-
-        // Create and publish notification
-        await createAndPublishNotification({
-          client: recipientId,
-          request: currentRequest.id,
-        });
-        console.log('Notification sent to:', recipientId);
-      }
-
+      // Create and publish notification
+      await createAndPublishNotification({
+        client: recipientId,
+        request: currentRequest.id,
+      });
+      console.log('Notification sent to:', recipientId);
     } catch (error) {
       console.error("Error sending notification:", error);
     }
