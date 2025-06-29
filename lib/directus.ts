@@ -763,14 +763,16 @@ export const createGearListing = async (data: {
           const formData = new FormData();
 
           // Handle both web File objects and mobile image objects
-          if (image instanceof File) {
-            formData.append("file", image);
-          } else {
+          // The previous `image instanceof File` check could cause a ReferenceError on native.
+          // Checking for the 'uri' property is a safer way to distinguish the image types.
+          if ("uri" in image) {
             formData.append("file", {
               uri: image.uri,
               type: image.type,
               name: image.name,
             } as any);
+          } else {
+            formData.append("file", image as File);
           }
 
           const response = await fetch(`${DIRECTUS_URL}/files`, {

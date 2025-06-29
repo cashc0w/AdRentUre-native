@@ -20,6 +20,14 @@ export default {
       supportsTablet: true,
       bundleIdentifier: "com.gearmeup.native",
       infoPlist: {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true,
+          "NSExceptionDomains": {
+            "localhost": {
+              "NSExceptionAllowsInsecureHTTPLoads": true
+            }
+          }
+        },
         "NSLocationWhenInUseUsageDescription": "We need your location to show nearby places",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "We need your location to show nearby places",
         "UIBackgroundModes": ["location", "fetch"],
