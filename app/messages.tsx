@@ -174,7 +174,7 @@ const Messages = () => {
                         {otherUser ? `${otherUser.first_name} ${otherUser.last_name}` : 'Unknown User'}
                       </Text>
                       <Text className='text-sm text-gray-600 truncate'>
-                        {conversation.gear_listing ? conversation.gear_listing.title : 'No gear listing'}
+                        {conversation.rental_request.gear_listing ? conversation.rental_request.gear_listing.title : 'No gear listing'}
                       </Text>
                     </TouchableOpacity>
                   );
@@ -196,8 +196,8 @@ const Messages = () => {
                     : 'Unknown User'}
                 </Text>
                 <Text className='text-sm text-gray-600'>
-                  {selectedConversation.gear_listing
-                    ? `About: ${selectedConversation.gear_listing.title}`
+                  {selectedConversation.rental_request.gear_listing
+                    ? `About: ${selectedConversation.rental_request.gear_listing.title}`
                     : 'No gear listing'}
                 </Text>
               </View>

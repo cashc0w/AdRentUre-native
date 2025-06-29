@@ -170,7 +170,8 @@ export interface DirectusConversation {
   id: string;
   user_1: DirectusClientUser;
   user_2: DirectusClientUser;
-  gear_listing: DirectusGearListing;
+  rental_request: DirectusRentalRequest;
+  //gear_listing: DirectusGearListing;
   last_change: string;
   // created_at: string;
 }
@@ -274,7 +275,7 @@ export const loginUser = async (email: string, password: string) => {
         email,
         password,
         // We explicitly ask for the token in the response, although this is default
-        mode: 'json' 
+        mode: 'json'
       }),
     });
 
@@ -284,7 +285,7 @@ export const loginUser = async (email: string, password: string) => {
       const errorMessage = json.errors?.[0]?.message || 'Login request failed';
       throw new Error(errorMessage);
     }
-    
+
     const authResponse = json.data;
     console.log('Auth response from server:', authResponse);
 
@@ -378,7 +379,7 @@ export const logout = async () => {
         console.warn("Could not invalidate token on server during logout. This can happen if the token is already expired.", serverError);
       }
     }
-  } catch(e) {
+  } catch (e) {
     console.error("Error during server logout, proceeding with local cleanup:", e);
   } finally {
     // Always clear local data to complete the logout on the client side.
@@ -1127,6 +1128,10 @@ export const updateRentalRequestStatus = async (
           request: currentRequest.id,
         });
         console.log('Notification sent to:', recipientId);
+
+        const messageData = {
+
+        }
       }
 
     } catch (error) {
@@ -1143,7 +1148,8 @@ export const updateRentalRequestStatus = async (
 export const createConversation = async (data: {
   user_1: string;
   user_2: string;
-  gear_listing: string;
+  rental_request: string;
+  //gear_listing: string;
 }) => {
   try {
     const response = await directus.request(createItem("conversations", data));
@@ -1171,7 +1177,8 @@ export const getUserConversations = async (userID: string) => {
           "user_2.*",
           "user_1.user.*",
           "user_2.user.*",
-          "gear_listing.*",
+          "rental_request.*",
+          //"gear_listing.*",
         ],
         sort: ["-last_change"], // Sort by last change date
       })
@@ -1196,7 +1203,8 @@ export const getConversation = async (conversationId: string) => {
           "user_2.*",
           "user_1.user.*",
           "user_2.user.*",
-          "gear_listing.*",
+          "rental_request.*",
+          //"gear_listing.*",
         ],
       })
     );
@@ -1345,7 +1353,9 @@ export const getNotifications = async (clientID: string) => {
         relationshipPromises.conversations.push(
           directus.request(
             readItem("conversations", id, {
-              fields: ["*", "user_1.*", "user_2.*", "user_1.user.*", "user_2.user.*", "gear_listing.*"],
+              fields: ["*", "user_1.*", "user_2.*", "user_1.user.*", "user_2.user.*", "rental_request.*",
+                //"gear_listing.*"
+              ],
             })
           )
             .then(data => {

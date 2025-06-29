@@ -21,7 +21,7 @@ export function useRentalRequest(options: UseRentalRequestOptions = {}) {
     try {
       setLoading(true);
       setError(null);
-      await createRentalRequest({
+      const rentalRequest=await createRentalRequest({
         gear_listing: data.gear_listing,
         renter: data.renter,
         owner: data.owner,
@@ -34,7 +34,7 @@ export function useRentalRequest(options: UseRentalRequestOptions = {}) {
       const conversationData = {
         user_1: data.renter,
         user_2: data.owner,
-        gear_listing: data.gear_listing,
+        rental_request: rentalRequest.id,
       }
       const conversation = await createConversation(conversationData);
       console.log('Conversation created:', conversation);
