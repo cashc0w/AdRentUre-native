@@ -105,12 +105,19 @@ export const geocode = async (address: string) => {
     const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodedAddress}.json?access_token=${MAPBOX_TOKEN}`;
     console.log('Request URL:', url);
     
-    const response = await fetch(url, {
+    // Implement fetch with timeout
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Geocoding request timed out')), 10000) // 10 second timeout
+    );
+
+    const fetchPromise = fetch(url, {
       method: 'GET',
       headers: {
         'Accept': 'application/json',
       },
     });
+
+    const response = await Promise.race([fetchPromise, timeoutPromise]) as Response;
     
     if (!response.ok) {
       const errorText = await response.text();
@@ -125,7 +132,7 @@ export const geocode = async (address: string) => {
     const data = await response.json();
     return data;
   } catch (error) {
-    console.error('Geocoding error details:', {
+    console.warn('Geocoding issue:', {
       error: error instanceof Error ? error.message : 'Unknown error',
       address,
       token: MAPBOX_TOKEN ? 'Token present' : 'Token missing'

@@ -137,7 +137,7 @@ export default function Browse() {
       }
     >
       {/* Header with Search and List Button */}
-      <View className="p-4 bg-white shadow-sm">
+      <View className="p-4 bg-white shadow-sm  mt-16">
         <View className="flex-row justify-between items-center mb-4">
           <Text className="text-2xl font-bold text-gray-900">Browse Gear</Text>
           {user && (
