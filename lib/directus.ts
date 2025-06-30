@@ -517,7 +517,7 @@ export const getGearListings = async (
     sort?: string;
     maxRadius?: number;
   },
-  currentUser: DirectusUser | null // Accept pre-fetched user
+  currentUser: DirectusUser | null = null // Accept pre-fetched user
 ) => {
   try {
     let userLocation = null;
@@ -890,7 +890,14 @@ export const getRentalRequests = async (
     const response = (await directus.request(
       readItems("rental_requests", {
         filter: query,
-        fields: ["*", "gear_listing.*", "renter.*", "owner.*"],
+        fields: [
+          "*",
+          "gear_listing.*",
+          "renter.*",
+          "owner.*",
+          "gear_listing.gear_images.*",
+          "gear_listing.gear_images.directus_files_id.*",
+        ],
         meta: "total_count",
       })
     )) as unknown as DirectusRentalRequest[];
