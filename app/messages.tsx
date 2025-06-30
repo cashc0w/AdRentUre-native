@@ -51,6 +51,13 @@ const Messages = () => {
     isConnected: conversationConnected,
   } = useConversationMessages(selectedConversation?.id || '', currentClientId);
 
+  // Helper function to get notification count for a conversation
+  const getNotificationCount = (conversationId: string): number => {
+    return notifications.filter(notification =>
+      notification.conversation.id === conversationId
+    ).length;
+  };
+
   // Auto-scroll to bottom when messages change or conversation loads
   useEffect(() => {
     if (messages.length > 0 && !messagesLoading) {
@@ -72,6 +79,7 @@ const Messages = () => {
 
   }, [selectedConversation?.id, messagesLoading]);
 
+  // Mark notifications as read for the selected conversation
   useEffect(() => {
     if (selectedConversation && !messagesLoading && !notificationsLoading && notifications.length > 0) {
       console.log("about to mark notif as read for conversation:", selectedConversation.id);
@@ -83,7 +91,7 @@ const Messages = () => {
         }
       });
     }
-  }, [selectedConversation?.id, messagesLoading, notifications]);
+  }, [selectedConversation?.id, messagesLoading]);
 
 
   // Listen for messages from any conversation to update the conversation list
@@ -182,6 +190,10 @@ const Messages = () => {
               ) : (
                 conversations.map((conversation) => {
                   const otherUser = getOtherUser(conversation);
+                  const notificationCount = notifications.filter(notification =>
+                    notification.conversation.id === conversation.id
+                  ).length;
+
                   return (
                     <TouchableOpacity
                       key={conversation.id}
@@ -189,10 +201,19 @@ const Messages = () => {
                         }`}
                       onPress={() => setSelectedConversation(conversation)}
                     >
-                      <Text className='font-medium text-gray-900'>
-                        {otherUser ? `${otherUser.first_name} ${otherUser.last_name}` : 'Unknown User'}
-                      </Text>
-                      <Text className='text-sm text-gray-600 truncate'>
+                      <View className='flex-row items-center justify-between'>
+                        <Text className={`font-medium flex-1 ${notificationCount > 0 ? 'text-green-600' : 'text-gray-900'}`}>
+                          {otherUser ? `${otherUser.first_name} ${otherUser.last_name}` : 'Unknown User'}
+                        </Text>
+                        {notificationCount > 0 && (
+                          <View className='bg-green-600 rounded-full min-w-[20px] h-5 items-center justify-center ml-2'>
+                            <Text className='text-white text-xs font-bold'>
+                              {notificationCount}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text className={`text-sm truncate ${notificationCount > 0 ? 'text-green-500' : 'text-gray-600'}`}>
                         {conversation.rental_request.gear_listing ? conversation.rental_request.gear_listing.title : 'No gear listing'}
                       </Text>
                     </TouchableOpacity>
@@ -251,8 +272,8 @@ const Messages = () => {
                         >
                           <View
                             className={`max-w-[75%] p-3 rounded-lg ${isCurrentUser
-                                ? 'bg-green-600'
-                                : 'bg-white border border-gray-200'
+                              ? 'bg-green-600'
+                              : 'bg-white border border-gray-200'
                               }`}
                           >
                             <Text
@@ -288,8 +309,8 @@ const Messages = () => {
                   />
                   <TouchableOpacity
                     className={`px-4 py-2 rounded-r-lg ${sending || !newMessage.trim() || !globalConnected
-                        ? 'bg-gray-400'
-                        : 'bg-green-600'
+                      ? 'bg-gray-400'
+                      : 'bg-green-600'
                       }`}
                     onPress={handleSendMessage}
                     disabled={sending || !newMessage.trim() || !globalConnected}

@@ -61,8 +61,6 @@ export default function TabLayout() {
   const router = useRouter();
   const { client } = useClientWithUserID(user?.id || "");
 
-  const isLoggedIn = !!user;
-
   return (
     <Tabs
       initialRouteName="about"
@@ -78,7 +76,7 @@ export default function TabLayout() {
         name="about"
         options={{
           title: 'About',
-          href: '/about',
+          href: !user?'/about': null,
           tabBarIcon: ({ color, size }) => <Ionicons name="information-circle-outline" size={size} color={color} />,
         }}
       />
@@ -93,7 +91,7 @@ export default function TabLayout() {
         name="messages"
         options={{
           title: 'Messages',
-          href: '/messages',
+          href: user?'/messages':null,
           tabBarIcon: (props) => <MailIconWithBadge {...props} />,
         }}
       />
@@ -101,17 +99,15 @@ export default function TabLayout() {
         name="rentals"
         options={{
           title: 'My Rentals',
-          href: '/rentals',
+          href: user?'/rentals':null,
           tabBarIcon: ({ color, size }) => <Ionicons name="pricetags-outline" size={size} color={color} />,
         }}
       />
-      
-
       <Tabs.Screen
         name="profile"
         options={{
           title: 'Profile',
-          href: isLoggedIn && client?.id ? `/profile/${client.id}` : null,
+          href: user && client?.id ? `/profile/${client.id}` : null,
           tabBarIcon: ({ color, size }) => <Ionicons name="person-outline" size={size} color={color} />,
         }}
       />
@@ -119,11 +115,12 @@ export default function TabLayout() {
         name="auth"
         options={{
           title: 'Login',
-          href: !isLoggedIn ? '/auth' : null,
+          href: !user ? '/auth' : null,
           tabBarIcon: ({ color, size }) => <Ionicons name="log-in-outline" size={size} color={color} />,
         }}
       />
-      {isLoggedIn && (
+
+      {/* {user && (
         <Tabs.Screen
           name="logout" // This is a dummy screen
           options={{
@@ -147,7 +144,7 @@ export default function TabLayout() {
             },
           }}
         />
-      )}
+      )} */}
     </Tabs>
   );
 }
