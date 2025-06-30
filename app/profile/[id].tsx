@@ -512,7 +512,11 @@ export default function ProfilePage() {
     router.replace('/auth')
   }
 
-  const isOwnProfile = user?.id === client?.user.id
+  console.log("id of all sort")
+  console.log(id)
+  console.log(user?.id)
+  console.log(client)
+  const isOwnProfile = user?.id === client?.user?.id
 
   // Add a guard to prevent rendering with an invalid ID
   if (!id && !loading) {
@@ -553,19 +557,17 @@ export default function ProfilePage() {
           <View className="items-center md:items-start md:w-1/4">
             <View className="w-24 h-24 rounded-full bg-indigo-100 items-center justify-center mb-4">
               <Text className="text-4xl font-bold text-indigo-600">
-                {client.user.first_name[0]}
-                {client.user.last_name[0]}
+              {client?.first_name?.[0] || '?'}
+              {client?.last_name?.[0] || '?'}
               </Text>
             </View>
           </View>
           <View className="flex-1 text-center md:text-left md:ml-6">
             <Text className="text-3xl font-bold text-gray-900">
-              {client.user.first_name} {client.user.last_name}
+            {client?.first_name || ''} {client?.last_name || ''}
             </Text>
-            <Text className="text-gray-600 mt-1">{client.user.email}</Text>
-            <Text className="text-gray-500 mt-2">
-              Member since {new Date(client.user.created_at).toLocaleDateString()}
-            </Text>
+            
+            
             {isOwnProfile && (
               <TouchableOpacity
                 onPress={handleLogout}
