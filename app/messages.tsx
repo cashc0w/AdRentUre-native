@@ -4,18 +4,17 @@ import "../globals.css";
 import { useGlobalMessages } from '../hooks/useGlobalMessages';
 import { useConversationMessages } from '../hooks/useConversationMessages';
 import { useUserConversations } from '../hooks/useUserConversations';
-import { DirectusConversation, DirectusMessage, getMessageNotifications } from '../lib/directus';
+import { DirectusConversation, DirectusNotification, DirectusMessage, getMessageNotifications, markNotificationAsRead } from '../lib/directus';
 import { format, set } from 'date-fns';
 import { useAuth } from '../contexts/AuthContext';
 import { useClientWithUserID } from '../hooks/useClientWithUserID';
-import { DirectusNotification } from '@directus/sdk';
 import { useUserMessageNotifications } from '../hooks/useUserMessageNotifications';
 
 const Messages = () => {
   const [selectedConversation, setSelectedConversation] = useState<DirectusConversation | null>(null);
   const [newMessage, setNewMessage] = useState('');
   const [conversationListReload, setConversationListReload] = useState(false);
-  
+
   // Ref for auto-scrolling
   const scrollViewRef = useRef<ScrollView>(null);
 
@@ -30,7 +29,11 @@ const Messages = () => {
     error: conversationsError,
   } = useUserConversations(userId, conversationListReload);
 
-  const{ notifications, loading: notificationsLoading, error: notificationsError } = useUserMessageNotifications(userId, conversationListReload);
+  const {
+    notifications,
+    loading: notificationsLoading,
+    error: notificationsError
+  } = useUserMessageNotifications(currentClientId, conversationListReload);
 
   // Get all conversation IDs for global subscription
   const conversationIds = conversations.map(conv => conv.id);
@@ -61,11 +64,27 @@ const Messages = () => {
   // Auto-scroll when conversation changes (after loading completes)
   useEffect(() => {
     if (selectedConversation && !messagesLoading && messages.length > 0) {
+      //scrolling
       setTimeout(() => {
         scrollViewRef.current?.scrollToEnd({ animated: false });
       }, 200);
     }
+
   }, [selectedConversation?.id, messagesLoading]);
+
+  useEffect(() => {
+    if (selectedConversation && !messagesLoading && !notificationsLoading && notifications.length > 0) {
+      console.log("about to mark notif as read for conversation:", selectedConversation.id);
+      console.log("notifications before marking:", notifications);
+      // Mark notifications as read for the selected conversation
+      notifications.forEach(notification => {
+        if (notification.conversation.id === selectedConversation.id) {
+          markNotificationAsRead(notification.id)
+        }
+      });
+    }
+  }, [selectedConversation?.id, messagesLoading, notifications]);
+
 
   // Listen for messages from any conversation to update the conversation list
   useEffect(() => {
@@ -73,7 +92,7 @@ const Messages = () => {
 
     const unsubscribe = onMessageReceived((message, conversationId) => {
       console.log("Received global message:", message, "for conversation:", conversationId);
-      
+
       // If the message is from someone else (not current user), reload conversation list
       if (message.sender.id !== currentClientId) {
         console.log("Message from another user, refreshing conversation list");
@@ -84,27 +103,24 @@ const Messages = () => {
     return unsubscribe;
   }, [onMessageReceived, currentClientId]);
 
-  // Auto-select first conversation
-  useEffect(() => {
-    if (conversations.length > 0 && !selectedConversation) {
-      setSelectedConversation(conversations[0]);
-    }
-  }, [conversations, selectedConversation]);
+  // USELESS // Auto-select first conversation
+  // useEffect(() => {
+  //   if (conversations.length > 0 && !selectedConversation) {
+  //     setSelectedConversation(conversations[0]);
+  //   }
+  // }, [conversations, selectedConversation]);
 
-  const onConversationSelect = (conversation: DirectusConversation) => {
-    setSelectedConversation(conversation);
-    
-  }
+  // Handle sending a new message
   const handleSendMessage = async () => {
     if (!newMessage.trim() || !selectedConversation) return;
 
     try {
       await sendMessage(newMessage.trim());
       setNewMessage('');
-      
+
       // Trigger conversation list reload for sender
       setConversationListReload(prev => !prev);
-      
+
       // Scroll to bottom after sending
       setTimeout(() => {
         scrollViewRef.current?.scrollToEnd({ animated: true });
@@ -139,7 +155,7 @@ const Messages = () => {
       <View className='bg-gray-900 py-4 px-4'>
         <Text className='text-2xl font-bold text-white'>Messages</Text>
         <Text className='text-gray-300 mt-1'>Chat with gear owners and renters</Text>
-        
+
         {/* Connection Status in Header */}
         <View className='flex-row items-center mt-2'>
           <View className={`w-2 h-2 rounded-full mr-2 ${globalConnected ? 'bg-green-400' : 'bg-red-400'}`} />
@@ -151,7 +167,7 @@ const Messages = () => {
 
       <View className='flex-1 flex-row'>
         {/* Conversations List */}
-        {conversationsLoading && conversations.length < 1? (
+        {conversationsLoading && conversations.length < 1 ? (
           <View className='w-1/4 border-r border-gray-200 bg-gray-50 flex-1 items-center justify-center'>
             <ActivityIndicator size="large" color="#0000ff" />
             <Text className='text-gray-500 mt-2'>Loading conversations...</Text>
@@ -169,9 +185,8 @@ const Messages = () => {
                   return (
                     <TouchableOpacity
                       key={conversation.id}
-                      className={`p-4 border-b border-gray-200 ${
-                        selectedConversation?.id === conversation.id ? 'bg-gray-100' : ''
-                      }`}
+                      className={`p-4 border-b border-gray-200 ${selectedConversation?.id === conversation.id ? 'bg-gray-100' : ''
+                        }`}
                       onPress={() => setSelectedConversation(conversation)}
                     >
                       <Text className='font-medium text-gray-900'>
@@ -207,7 +222,7 @@ const Messages = () => {
               </View>
 
               {/* Messages */}
-              <ScrollView 
+              <ScrollView
                 ref={scrollViewRef}
                 className='flex-1 p-4 bg-gray-50'
                 showsVerticalScrollIndicator={true}
@@ -235,11 +250,10 @@ const Messages = () => {
                           className={`flex ${isCurrentUser ? 'items-end' : 'items-start'}`}
                         >
                           <View
-                            className={`max-w-[75%] p-3 rounded-lg ${
-                              isCurrentUser
+                            className={`max-w-[75%] p-3 rounded-lg ${isCurrentUser
                                 ? 'bg-green-600'
                                 : 'bg-white border border-gray-200'
-                            }`}
+                              }`}
                           >
                             <Text
                               className={isCurrentUser ? 'text-white' : 'text-gray-800'}
@@ -247,9 +261,8 @@ const Messages = () => {
                               {message.message}
                             </Text>
                             <Text
-                              className={`text-xs mt-1 ${
-                                isCurrentUser ? 'text-green-200' : 'text-gray-500'
-                              }`}
+                              className={`text-xs mt-1 ${isCurrentUser ? 'text-green-200' : 'text-gray-500'
+                                }`}
                             >
                               {format(new Date(message.date_created), 'MMM d, h:mm a')}
                             </Text>
@@ -274,11 +287,10 @@ const Messages = () => {
                     returnKeyType='send'
                   />
                   <TouchableOpacity
-                    className={`px-4 py-2 rounded-r-lg ${
-                      sending || !newMessage.trim() || !globalConnected
+                    className={`px-4 py-2 rounded-r-lg ${sending || !newMessage.trim() || !globalConnected
                         ? 'bg-gray-400'
                         : 'bg-green-600'
-                    }`}
+                      }`}
                     onPress={handleSendMessage}
                     disabled={sending || !newMessage.trim() || !globalConnected}
                   >

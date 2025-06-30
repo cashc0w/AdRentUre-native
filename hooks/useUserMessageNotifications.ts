@@ -1,8 +1,7 @@
 import { useState, useEffect } from "react";
-import { getMessageNotifications,  } from "../lib/directus";
-import { DirectusNotification } from "@directus/sdk";
+import { getMessageNotifications, DirectusNotification } from "../lib/directus";
 
-export function useUserMessageNotifications(userID: string, reload: boolean) {
+export function useUserMessageNotifications(clientID: string, reload: boolean) {
   const [notifications, setNotifications] = useState<DirectusNotification[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
@@ -11,8 +10,10 @@ export function useUserMessageNotifications(userID: string, reload: boolean) {
     async function fetchUserMessageNotifications() {
       try {
         setLoading(true);
-
-        const messageNotifications = await getMessageNotifications(userID);
+        console.log("Hook: Fetching notifications for clientID:", clientID);
+        const messageNotifications = await getMessageNotifications(clientID);
+        console.log("Hook: Received notifications:", messageNotifications);
+        console.log("Hook: Notifications count:", messageNotifications?.length || 0);
         setNotifications(messageNotifications);
       } catch (err) {
         setError(err as Error);
@@ -21,10 +22,10 @@ export function useUserMessageNotifications(userID: string, reload: boolean) {
       }
     }
 
-    if (userID) {
+    if (clientID) {
       fetchUserMessageNotifications();
     }
-  }, [userID, reload]);
+  }, [clientID, reload]);
 
   return {
     notifications,

@@ -217,7 +217,7 @@ export const directus = createDirectus(DIRECTUS_URL)
       if ((options as any).path?.includes('auth/refresh')) {
         return response;
       }
-      
+
       // If the request failed with a 401 status, it means the token has expired
       if (response.status === 401) {
         // If there's no refresh promise, create one.
@@ -232,7 +232,7 @@ export const directus = createDirectus(DIRECTUS_URL)
         }
 
         console.log('A request is waiting for the token to be refreshed...');
-        
+
         try {
           const refreshed = await refreshPromise;
 
@@ -1093,13 +1093,13 @@ export const updateRentalRequestStatus = async (
 
       }
     } catch (error) {
-    console.error("Error sending notification:", error);
+      console.error("Error sending notification:", error);
+    }
+    return response as DirectusRentalRequest;
+  } catch (error) {
+    console.error("Error updating rental request status:", error);
+    throw error;
   }
-  return response as DirectusRentalRequest;
-} catch (error) {
-  console.error("Error updating rental request status:", error);
-  throw error;
-}
 };
 
 // Create a conversation
@@ -1367,21 +1367,28 @@ export const getNotifications = async (clientID: string) => {
     return enrichedNotifications;
   } catch (error) {
     console.error("Error in notification processing:", error);
-    return [];
+    // return [];
+    // Instead of returning empty array, throw the error so it can be handled properly
+    throw new Error(`Failed to fetch notifications: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  
   }
 };
 export const getMessageNotifications = async (clientID: string) => {
   try {
     const allCLientNotifictions = await getNotifications(clientID);
-    console.log("All client notifications type from directus:", typeof allCLientNotifictions);
     const messageNotifications = allCLientNotifictions.filter(
       (notification) => notification.conversation);
-    console.log("Message notifications from directus:", messageNotifications);
-    
+    console.log("About to return messageNotifications:", messageNotifications);
+    console.log("Type of messageNotifications:", typeof messageNotifications);
+    console.log("Is array:", Array.isArray(messageNotifications));
+
     return messageNotifications as DirectusNotification[];
   } catch (error) {
-    console.error("Error in notification processing:", error);
-    return [];
+    console.error("Error in message notification processing:", error);
+    //return [];
+    // Instead of returning empty array, throw the error so it can be handled properly
+    throw new Error(`Failed to fetch notifications: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  
   }
 };
 
