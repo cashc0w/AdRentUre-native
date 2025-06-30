@@ -40,7 +40,6 @@ type AppSchema = {
   directus_users: DirectusUser[];
 };
 
-let isRefreshing = false;
 let refreshPromise: Promise<boolean> | null = null;
 
 // Cross-platform token storage helpers
@@ -214,28 +213,36 @@ export const directus = createDirectus(DIRECTUS_URL)
   .with(authentication('json'))
   .with(rest({
     onResponse: async (response, options) => {
-      const retry = () => directus.request(options as any);
-
-      // Only handle 401 errors for routes that are not the refresh route itself
-      if (response.status === 401 && !(options as any).path?.includes('auth/refresh')) {
-        // If a refresh isn't already in progress, start one.
-        if (!isRefreshing) {
+      // If the request is for refreshing the token, we don't need to intercept it
+      if ((options as any).path?.includes('auth/refresh')) {
+        return response;
+      }
+      
+      // If the request failed with a 401 status, it means the token has expired
+      if (response.status === 401) {
+        // If there's no refresh promise, create one.
+        // This is the "lock" that prevents multiple refresh requests.
+        if (!refreshPromise) {
           console.log('Token expired, starting refresh...');
-          isRefreshing = true;
           refreshPromise = refreshAuth().finally(() => {
-            isRefreshing = false;
-            // The original refreshPromise is kept so that all waiting requests can be resolved.
+            // Once the refresh attempt is complete (success or failure),
+            // reset the promise so the next failed request can trigger a new refresh.
+            refreshPromise = null;
           });
         }
 
         console.log('A request is waiting for the token to be refreshed...');
-        const refreshed = await refreshPromise;
+        
+        try {
+          const refreshed = await refreshPromise;
 
-        if (refreshed) {
-          console.log('Token was refreshed, retrying original request...');
-          return retry();
-        } else {
-          console.log('Token refresh failed, the original request will not be retried.');
+          if (refreshed) {
+            console.log('Token was refreshed, retrying original request...');
+            // The token is now set on the client, so we can retry the original request.
+            return directus.request(options as any);
+          }
+        } catch (e) {
+          console.error('An error occurred during token refresh, original request will fail.', e);
         }
       }
 

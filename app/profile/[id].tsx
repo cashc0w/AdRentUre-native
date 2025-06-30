@@ -514,6 +514,18 @@ export default function ProfilePage() {
 
   const isOwnProfile = user?.id === client?.user.id
 
+  // Add a guard to prevent rendering with an invalid ID
+  if (!id && !loading) {
+    return (
+      <View className="flex-1 justify-center items-center bg-gray-50 p-4">
+        <Text className="text-red-500 text-lg text-center">Profile ID is missing.</Text>
+        <TouchableOpacity onPress={() => router.back()} className="mt-4 px-4 py-2 bg-indigo-600 rounded-md">
+          <Text className="text-white">Go Back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   if (loading) {
     return (
       <View className="flex-1 justify-center items-center bg-gray-50">
