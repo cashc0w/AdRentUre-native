@@ -839,15 +839,15 @@ export const createRentalRequest = async (requestData: {
     const response = (await directus.request(
       createItem("rental_requests", requestData)
     )) as DirectusRentalRequest;
-    try {
-      // Create and publish notification
-      await createAndPublishNotification({
-        client: requestData.owner,
-        request: response.id,
-      });
-    } catch (error) {
-      console.error("Error sending notification:", error);
-    }
+    // try {
+    //   // Create and publish notification
+    //   await createAndPublishNotification({
+    //     client: requestData.owner,
+    //     request: response.id,
+    //   });
+    // } catch (error) {
+    //   console.error("Error sending notification:", error);
+    // }
     return response;
   } catch (error) {
     console.error("Error creating rental request:", error);
@@ -1068,33 +1068,31 @@ export const updateRentalRequestStatus = async (
     try {
       const currentRequest = await getRentalRequest(requestId);
       console.log('Current request after update:', currentRequest);
-      
+
       // Determine which user should receive the notification
       const recipientId =
         status === "approved" || status === "rejected"
           ? currentRequest.renter.id
           : currentRequest.owner.id;
 
-        // Create and publish notification
-        await createAndPublishNotification({
-          client: recipientId,
-          request: currentRequest.id,
-        });
-        console.log('Notification sent to:', recipientId);
+      // Create and publish notification
+      await createAndPublishNotification({
+        client: recipientId,
+        request: currentRequest.id,
+      });
+      console.log('Notification sent to:', recipientId);
 
-        const messageData = {
+      const messageData = {
 
-        }
       }
-
     } catch (error) {
-      console.error("Error sending notification:", error);
-    }
-    return response as DirectusRentalRequest;
-  } catch (error) {
-    console.error("Error updating rental request status:", error);
-    throw error;
+    console.error("Error sending notification:", error);
   }
+  return response as DirectusRentalRequest;
+} catch (error) {
+  console.error("Error updating rental request status:", error);
+  throw error;
+}
 };
 
 // Create a conversation
@@ -1368,9 +1366,12 @@ export const getNotifications = async (clientID: string) => {
 export const getMessageNotifications = async (clientID: string) => {
   try {
     const allCLientNotifictions = await getNotifications(clientID);
+    console.log("All client notifications type from directus:", typeof allCLientNotifictions);
     const messageNotifications = allCLientNotifictions.filter(
-      (notification) => notification.conversation)
-    return messageNotifications;
+      (notification) => notification.conversation);
+    console.log("Message notifications from directus:", messageNotifications);
+    
+    return messageNotifications as DirectusNotification[];
   } catch (error) {
     console.error("Error in notification processing:", error);
     return [];

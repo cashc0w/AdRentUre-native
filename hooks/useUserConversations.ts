@@ -3,9 +3,7 @@ import { getUserConversations } from "../lib/directus";
 import type { DirectusConversation } from "../lib/directus";
 
 export function useUserConversations(userID: string, reload: boolean) {
-  const [conversations, setConversations] = useState<DirectusConversation[]>(
-    []
-  );
+  const [conversations, setConversations] = useState<DirectusConversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 

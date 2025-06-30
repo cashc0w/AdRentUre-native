@@ -4,10 +4,12 @@ import "../globals.css";
 import { useGlobalMessages } from '../hooks/useGlobalMessages';
 import { useConversationMessages } from '../hooks/useConversationMessages';
 import { useUserConversations } from '../hooks/useUserConversations';
-import { DirectusConversation, DirectusMessage } from '../lib/directus';
-import { format } from 'date-fns';
+import { DirectusConversation, DirectusMessage, getMessageNotifications } from '../lib/directus';
+import { format, set } from 'date-fns';
 import { useAuth } from '../contexts/AuthContext';
 import { useClientWithUserID } from '../hooks/useClientWithUserID';
+import { DirectusNotification } from '@directus/sdk';
+import { useUserMessageNotifications } from '../hooks/useUserMessageNotifications';
 
 const Messages = () => {
   const [selectedConversation, setSelectedConversation] = useState<DirectusConversation | null>(null);
@@ -27,6 +29,8 @@ const Messages = () => {
     loading: conversationsLoading,
     error: conversationsError,
   } = useUserConversations(userId, conversationListReload);
+
+  const{ notifications, loading: notificationsLoading, error: notificationsError } = useUserMessageNotifications(userId, conversationListReload);
 
   // Get all conversation IDs for global subscription
   const conversationIds = conversations.map(conv => conv.id);
@@ -112,7 +116,7 @@ const Messages = () => {
 
   // Get the other user in the conversation
   const getOtherUser = (conversation: DirectusConversation) => {
-    return conversation.user_1.id === userId
+    return conversation.user_1.id === currentClientId
       ? conversation.user_2
       : conversation.user_1;
   };
