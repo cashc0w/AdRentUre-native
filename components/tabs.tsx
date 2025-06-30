@@ -78,7 +78,7 @@ export default function TabLayout() {
         name="about"
         options={{
           title: 'About',
-          href: !isLoggedIn ? '/about' : null,
+          href: '/about',
           tabBarIcon: ({ color, size }) => <Ionicons name="information-circle-outline" size={size} color={color} />,
         }}
       />
@@ -93,10 +93,20 @@ export default function TabLayout() {
         name="messages"
         options={{
           title: 'Messages',
-          href: isLoggedIn ? '/messages' : null,
+          href: '/messages',
           tabBarIcon: (props) => <MailIconWithBadge {...props} />,
         }}
       />
+      <Tabs.Screen
+        name="rentals"
+        options={{
+          title: 'My Rentals',
+          href: '/rentals',
+          tabBarIcon: ({ color, size }) => <Ionicons name="pricetags-outline" size={size} color={color} />,
+        }}
+      />
+      
+
       <Tabs.Screen
         name="profile"
         options={{
