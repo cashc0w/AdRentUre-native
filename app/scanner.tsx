@@ -55,18 +55,21 @@ export default function Scanner() {
       const { data } = scanningResult;
       const parsedData = JSON.parse(data);
 
-      const expectedAction = isReturnFlow ? "initiate_return" : "start_handover";
       const targetStatus = isReturnFlow ? "completed" : "ongoing";
 
-      if (parsedData.action === expectedAction && parsedData.rentalId) {
-        updateStatus(parsedData.rentalId, targetStatus);
+      if (parsedData.token && parsedData.rentalId) {
+        updateStatus(parsedData.rentalId, targetStatus, parsedData.token);
       } else {
-        throw new Error("Invalid QR code.");
+        throw new Error("Invalid QR code data.");
       }
     } catch (e) {
+      const errorMessage = e instanceof Error && e.message.includes("Invalid QR code") 
+        ? `This QR code is not valid for a ${isReturnFlow ? "gear return" : "rental handover"}.`
+        : "The QR code could not be read. Please try again.";
+
       Alert.alert(
         "Invalid QR Code",
-        `This QR code is not valid for a ${isReturnFlow ? "gear return" : "rental handover"}.`,
+        errorMessage,
         [{ text: "OK", onPress: () => setScanned(false) }]
       );
     }

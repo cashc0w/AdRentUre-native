@@ -153,6 +153,8 @@ export interface DirectusRentalRequest {
   start_date: string;
   end_date: string;
   status: string;
+  handover_token?: string;
+  handover_token_expires_at?: string;
 }
 
 export interface DirectusReview {
@@ -1066,46 +1068,116 @@ export const getUser = async (userId: string) => {
   }
 };
 
+export const generateHandoverToken = async (requestId: string) => {
+  try {
+    const token = await Crypto.randomUUID();
+    const expiresAt = new Date();
+    expiresAt.setMinutes(expiresAt.getMinutes() + 5); // Token expires in 5 minutes
+
+    await directus.request(
+      updateItem("rental_requests", requestId, {
+        handover_token: token,
+        handover_token_expires_at: expiresAt.toISOString(),
+      })
+    );
+
+    return token;
+  } catch (error) {
+    console.error("Error generating handover token:", error);
+    throw new Error("Could not generate QR code token.");
+  }
+};
+
+
 export const updateRentalRequestStatus = async (
   requestId: string,
-  status: "approved" | "rejected" | "completed" | "ongoing"
+  status: "approved" | "rejected" | "completed" | "ongoing",
+  token?: string
 ) => {
   try {
-    console.log('Updating rental request status:', { requestId, status });
+    // For "approved" and "rejected", no token is needed as it's a manual owner action.
+    if (status === "approved" || status === "rejected") {
+        console.log('Updating rental request status (no token required):', { requestId, status });
+        const response = await directus.request(
+          updateItem("rental_requests", requestId, {
+            status,
+          })
+        );
+        // Notification logic for approval/rejection
+        const currentRequest = await getRentalRequest(requestId);
+        await createAndPublishNotification({
+            client: currentRequest.renter.id,
+            request: currentRequest.id,
+        });
+        return response as DirectusRentalRequest;
+    }
+
+    // For "ongoing" or "completed", a token is required.
+    if (!token) {
+      throw new Error("A QR code token is required for this action.");
+    }
+
+    console.log('Updating rental request status via QR code:', { requestId, status, token });
+
+    // 1. Get the current user and the rental request details in one go
+    const [scanner, request] = await Promise.all([
+      directus.request(readMe()),
+      directus.request(readItem("rental_requests", requestId, { fields: ["*", "renter.*", "owner.*"] })) as Promise<DirectusRentalRequest & { handover_token?: string; handover_token_expires_at?: string }>
+    ]);
+
+    // 2. Authorize the scanner
+    const scannerClient = await getClientWithUserID(scanner.id);
+    const isPickup = status === "ongoing";
+    const isReturn = status === "completed";
+
+    if (isPickup && scannerClient.id !== request.renter.id) {
+      throw new Error("Only the renter can scan the pickup code.");
+    }
+    if (isReturn && scannerClient.id !== request.owner.id) {
+      throw new Error("Only the owner can scan the return code.");
+    }
+
+    // 3. Validate the token
+    if (!request.handover_token || request.handover_token !== token) {
+      throw new Error("Invalid or expired QR code. Please try again.");
+    }
+    if (!request.handover_token_expires_at || new Date() > new Date(request.handover_token_expires_at)) {
+      throw new Error("Expired QR code. Please generate a new one.");
+    }
+
+    // 4. Update the status and invalidate the token in a single operation
     const response = await directus.request(
       updateItem("rental_requests", requestId, {
         status,
+        handover_token: null, // Invalidate the token
+        handover_token_expires_at: null,
       })
     );
     console.log('Status update response:', response);
 
+    // 5. Send notification to the other party
     try {
-      const currentRequest = await getRentalRequest(requestId);
-      console.log('Current request after update:', currentRequest);
+      // The recipient is the one who ISN'T scanning
+      const recipientId = isPickup ? request.owner.id : request.renter.id;
 
-      // Determine which user should receive the notification
-      const recipientId =
-        status === "approved" || status === "rejected"
-          ? currentRequest.renter.id
-          : currentRequest.owner.id;
-
-      // Create and publish notification
       await createAndPublishNotification({
         client: recipientId,
-        request: currentRequest.id,
+        request: request.id,
       });
       console.log('Notification sent to:', recipientId);
 
-      const messageData = {
-
-      }
     } catch (error) {
-      console.error("Error sending notification:", error);
+      console.error("Error sending notification after status update:", error);
     }
+
     return response as DirectusRentalRequest;
   } catch (error) {
     console.error("Error updating rental request status:", error);
-    throw error;
+    // Forward the specific error message from the validation checks
+    if (error instanceof Error) {
+        throw error;
+    }
+    throw new Error("Failed to update rental status.");
   }
 };
 
