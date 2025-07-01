@@ -72,6 +72,9 @@ export default function TabLayout() {
       }}
     >
       <Tabs.Screen name="index" options={{ href: null }} />
+      <Tabs.Screen name="scanner" options={{ href: null }} />
+      <Tabs.Screen name="photoproof" options={{ href: null }} />
+      <Tabs.Screen name="handover" options={{ href: null }} />
       <Tabs.Screen
         name="about"
         options={{

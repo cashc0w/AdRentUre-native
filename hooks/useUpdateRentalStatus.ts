@@ -2,7 +2,7 @@ import { useState } from "react";
 import { updateRentalRequestStatus } from "../lib/directus";
 
 interface UseUpdateRentalStatusOptions {
-  onSuccess?: () => void;
+  onSuccess?: (requestId: string) => void;
   onError?: (error: Error) => void;
 }
 
@@ -14,7 +14,7 @@ export function useUpdateRentalStatus(
 
   const updateStatus = async (
     requestId: string,
-    status: "approved" | "rejected" | "completed"
+    status: "approved" | "rejected" | "completed" | "ongoing"
   ) => {
     try {
       console.log('useUpdateRentalStatus: Starting status update', { requestId, status });
@@ -23,7 +23,7 @@ export function useUpdateRentalStatus(
       console.log('useUpdateRentalStatus: Calling updateRentalRequestStatus');
       await updateRentalRequestStatus(requestId, status);
       console.log('useUpdateRentalStatus: Status update successful');
-      options.onSuccess?.();
+      options.onSuccess?.(requestId);
     } catch (err) {
       console.error('useUpdateRentalStatus: Error updating status:', err);
       const error = err as Error;

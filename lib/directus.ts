@@ -1068,7 +1068,7 @@ export const getUser = async (userId: string) => {
 
 export const updateRentalRequestStatus = async (
   requestId: string,
-  status: "approved" | "rejected" | "completed"
+  status: "approved" | "rejected" | "completed" | "ongoing"
 ) => {
   try {
     console.log('Updating rental request status:', { requestId, status });
