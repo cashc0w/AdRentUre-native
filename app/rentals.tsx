@@ -24,7 +24,7 @@ import { useCreateReview } from "../hooks/useCreateReview";
 import StarRating from "../components/StarRating";
 
 // Define statuses for ongoing and completed requests
-const ONGOING_STATUSES = ["pending", "approved"];
+const ONGOING_STATUSES = ["pending", "approved", "ongoing"];
 const COMPLETED_STATUSES = ["completed", "rejected", "cancelled"];
 
 // A "dumb" component for rendering a single request card
@@ -136,17 +136,26 @@ const RequestCard = ({
                 </Text>
               )}
             </View>
-            <Text
-              className={`text-sm font-semibold mt-2 capitalize ${
-                request.status === "approved"
-                  ? "text-green-600"
-                  : request.status === "rejected"
-                  ? "text-red-600"
-                  : "text-yellow-600"
-              }`}
-            >
-              {request.status}
-            </Text>
+            <View className="flex-row items-center mt-2">
+              <Text
+                className={`text-sm font-semibold capitalize ${
+                  request.status === "approved"
+                    ? "text-green-600"
+                    : request.status === "rejected"
+                    ? "text-red-600"
+                    : request.status === "ongoing"
+                    ? "text-blue-600"
+                    : "text-yellow-600"
+                }`}
+              >
+                {request.status}
+              </Text>
+              {request.status === "approved" && role === "owner" && (
+                <Text className="text-gray-600 italic ml-2">
+                  - awaiting handover
+                </Text>
+              )}
+            </View>
           </View>
         </View>
       </Pressable>
@@ -154,7 +163,7 @@ const RequestCard = ({
       {/* ACTIONS SECTION */}
       {!isCompleted && (
         <View className="p-4 border-t border-gray-200">
-          {/* Owner actions */}
+          {/* Owner actions for pending requests */}
           {role === "owner" && request.status === "pending" && (
             <View className="flex-row gap-2">
               <TouchableOpacity
@@ -174,14 +183,61 @@ const RequestCard = ({
             </View>
           )}
 
-          {/* Renter actions */}
-          {role === "renter" && request.status === "approved" && (
+          {/* Owner action for approved requests */}
+          {role === "owner" && request.status === "approved" && (
             <TouchableOpacity
-              onPress={() => onStatusChange(request.id, "completed")}
+              onPress={() =>
+                router.push({
+                  pathname: "/handover",
+                  params: { id: request.id, flow: "pickup" },
+                })
+              }
               disabled={updateLoading}
               className="bg-green-600 p-3 rounded-lg items-center disabled:opacity-50"
             >
-              <Text className="text-white font-bold">Mark as Completed</Text>
+              <Text className="text-white font-bold">Begin Handover</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Renter action for approved requests */}
+          {role === "renter" && request.status === "approved" && (
+            <TouchableOpacity
+              onPress={() => router.push({
+                pathname: "/scanner",
+                params: { flow: "pickup" }
+              })}
+              className="bg-blue-600 p-3 rounded-lg items-center"
+            >
+              <Text className="text-white font-bold">Scan to Receive Gear</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* RETURN FLOW - Renter initiates return when ongoing */}
+          {role === "renter" && request.status === "ongoing" && (
+            <TouchableOpacity
+              onPress={() =>
+                router.push({
+                  pathname: "/handover",
+                  params: { id: request.id, flow: "return" },
+                })
+              }
+              disabled={updateLoading}
+              className="bg-orange-600 p-3 rounded-lg items-center disabled:opacity-50"
+            >
+              <Text className="text-white font-bold">Initiate Return</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* RETURN FLOW - Owner scans when ongoing */}
+          {role === "owner" && request.status === "ongoing" && (
+            <TouchableOpacity
+              onPress={() => router.push({
+                pathname: "/scanner",
+                params: { flow: "return" }
+              })}
+              className="bg-purple-600 p-3 rounded-lg items-center"
+            >
+              <Text className="text-white font-bold">Scan to Confirm Return</Text>
             </TouchableOpacity>
           )}
         </View>
