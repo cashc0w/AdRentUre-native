@@ -14,6 +14,7 @@ const Messages = () => {
   const [selectedConversation, setSelectedConversation] = useState<DirectusConversation | null>(null);
   const [newMessage, setNewMessage] = useState('');
   const [conversationListReload, setConversationListReload] = useState(false);
+  const [notificationListReload, setNotificationListReload] = useState(false);
 
   // Ref for auto-scrolling
   const scrollViewRef = useRef<ScrollView>(null);
@@ -33,7 +34,9 @@ const Messages = () => {
     notifications,
     loading: notificationsLoading,
     error: notificationsError
-  } = useUserMessageNotifications(currentClientId, conversationListReload);
+  } = useUserMessageNotifications(currentClientId, notificationListReload);
+  const [notificationCountMap, setNotificationCountMap] = useState(new Map());
+  const [reloadCount, setReloadCount] = useState(false);
 
   // Get all conversation IDs for global subscription
   const conversationIds = conversations.map(conv => conv.id);
@@ -79,19 +82,56 @@ const Messages = () => {
 
   }, [selectedConversation?.id, messagesLoading]);
 
+  //count notif for each conversation
+  useEffect(() => {
+    const countMap = new Map();
+    conversations.forEach(conversation => {
+      countMap.set(conversation.id, getNotificationCount(conversation.id));
+    });
+    setNotificationCountMap(countMap);
+  }, [conversations, notifications, reloadCount]);
+
   // Mark notifications as read for the selected conversation
   useEffect(() => {
-    if (selectedConversation && !messagesLoading && !notificationsLoading && notifications.length > 0) {
-      console.log("about to mark notif as read for conversation:", selectedConversation.id);
-      console.log("notifications before marking:", notifications);
-      // Mark notifications as read for the selected conversation
-      notifications.forEach(notification => {
-        if (notification.conversation.id === selectedConversation.id) {
-          markNotificationAsRead(notification.id)
-        }
-      });
+    // A guard to ensure we have everything needed to proceed
+    if (!selectedConversation || notificationsLoading || notifications.length === 0) {
+      return;
     }
-  }, [selectedConversation?.id, messagesLoading]);
+
+    const markNotificationsAsRead = async () => {
+      // 1. Find all notifications for the currently selected conversation
+      const notificationsToMark = notifications.filter(
+        notification => notification.conversation.id === selectedConversation.id
+      );
+
+      // If there are no notifications for this conversation, do nothing.
+      if (notificationsToMark.length === 0) {
+        return;
+      }
+
+      try {
+        // 2. Create an array of promises, one for each API call
+        const markAsReadPromises = notificationsToMark.map(notification =>
+          markNotificationAsRead(notification.id)
+        );
+
+        // 3. Wait for ALL promises to resolve before continuing
+        await Promise.all(markAsReadPromises);
+
+        // 4. NOW that the server is updated, trigger a refetch of the notification list
+        console.log("All notifications marked as read. Refetching list...");
+        setNotificationListReload(prev => !prev);
+
+      } catch (error) {
+        console.error("Failed to mark notifications as read:", error);
+      }
+    };
+
+    markNotificationsAsRead();
+
+    // The dependency array is also cleaned up. This effect should only run
+    // when the user selects a different conversation.
+  }, [selectedConversation?.id, notifications]); // We also depend on notificationsLoading to ensure we don't run while a fetch is in progress.
 
 
   // Listen for messages from any conversation to update the conversation list
@@ -101,10 +141,11 @@ const Messages = () => {
     const unsubscribe = onMessageReceived((message, conversationId) => {
       console.log("Received global message:", message, "for conversation:", conversationId);
 
-      // If the message is from someone else (not current user), reload conversation list
+      // If the message is from someone else (not current user), reload conversation list and notif list
       if (message.sender.id !== currentClientId) {
         console.log("Message from another user, refreshing conversation list");
         setConversationListReload(prev => !prev);
+        setNotificationListReload(prev => !prev);
       }
     });
 
@@ -190,9 +231,7 @@ const Messages = () => {
               ) : (
                 conversations.map((conversation) => {
                   const otherUser = getOtherUser(conversation);
-                  const notificationCount = notifications.filter(notification =>
-                    notification.conversation.id === conversation.id
-                  ).length;
+
 
                   return (
                     <TouchableOpacity
@@ -202,18 +241,18 @@ const Messages = () => {
                       onPress={() => setSelectedConversation(conversation)}
                     >
                       <View className='flex-row items-center justify-between'>
-                        <Text className={`font-medium flex-1 ${notificationCount > 0 ? 'text-green-600' : 'text-gray-900'}`}>
+                        <Text className={`font-medium flex-1 ${notificationCountMap.get(conversation.id) > 0 ? 'text-green-600' : 'text-gray-900'}`}>
                           {otherUser ? `${otherUser.first_name} ${otherUser.last_name}` : 'Unknown User'}
                         </Text>
-                        {notificationCount > 0 && (
+                        {notificationCountMap.get(conversation.id) > 0 && (
                           <View className='bg-green-600 rounded-full min-w-[20px] h-5 items-center justify-center ml-2'>
                             <Text className='text-white text-xs font-bold'>
-                              {notificationCount}
+                              {notificationCountMap.get(conversation.id)}
                             </Text>
                           </View>
                         )}
                       </View>
-                      <Text className={`text-sm truncate ${notificationCount > 0 ? 'text-green-500' : 'text-gray-600'}`}>
+                      <Text className={`text-sm truncate ${notificationCountMap.get(conversation.id) > 0 ? 'text-green-500' : 'text-gray-600'}`}>
                         {conversation.rental_request.gear_listing ? conversation.rental_request.gear_listing.title : 'No gear listing'}
                       </Text>
                     </TouchableOpacity>
