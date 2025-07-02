@@ -93,30 +93,45 @@ const Messages = () => {
 
   // Mark notifications as read for the selected conversation
   useEffect(() => {
-    if (selectedConversation && !messagesLoading && !notificationsLoading && notifications.length > 0) {
-      console.log("about to mark notif as read for conversation:", selectedConversation.id);
-      console.log("notifications before marking:", notifications);
-      // Mark notifications as read for the selected conversation
-      notifications.forEach(async notification => {
-        if (notification.conversation.id === selectedConversation.id) {
-          await markNotificationAsRead(notification.id)
-        }
-      });
-      console.log("finished marking notif as read for conversation:", selectedConversation.id);
-      setNotificationListReload(prev => !prev);
-      console.log("just called for notification refecthing:", notifications);
-      setReloadCount(prev => !prev); // Trigger re-counting of notifications
-      console.log("just called for notification count reloading:");
+    // A guard to ensure we have everything needed to proceed
+    if (!selectedConversation || notificationsLoading || notifications.length === 0) {
+      return;
     }
-    else {
-      console.log("called for notif marking but condition:", 
-        (selectedConversation && !messagesLoading && !notificationsLoading && notifications.length > 0));
-      console.log("!selectedConversation:", !selectedConversation);
-      console.log("!messagesLoading:", !messagesLoading);
-      console.log("!notificationsLoading:", !notificationsLoading);
-      console.log("notifications.length:", notifications.length);
-    }
-  }, [selectedConversation?.id, onMessageReceived,]);
+
+    const markNotificationsAsRead = async () => {
+      // 1. Find all notifications for the currently selected conversation
+      const notificationsToMark = notifications.filter(
+        notification => notification.conversation.id === selectedConversation.id
+      );
+
+      // If there are no notifications for this conversation, do nothing.
+      if (notificationsToMark.length === 0) {
+        return;
+      }
+
+      try {
+        // 2. Create an array of promises, one for each API call
+        const markAsReadPromises = notificationsToMark.map(notification =>
+          markNotificationAsRead(notification.id)
+        );
+
+        // 3. Wait for ALL promises to resolve before continuing
+        await Promise.all(markAsReadPromises);
+
+        // 4. NOW that the server is updated, trigger a refetch of the notification list
+        console.log("All notifications marked as read. Refetching list...");
+        setNotificationListReload(prev => !prev);
+
+      } catch (error) {
+        console.error("Failed to mark notifications as read:", error);
+      }
+    };
+
+    markNotificationsAsRead();
+
+    // The dependency array is also cleaned up. This effect should only run
+    // when the user selects a different conversation.
+  }, [selectedConversation?.id, notifications]); // We also depend on notificationsLoading to ensure we don't run while a fetch is in progress.
 
 
   // Listen for messages from any conversation to update the conversation list
@@ -126,10 +141,11 @@ const Messages = () => {
     const unsubscribe = onMessageReceived((message, conversationId) => {
       console.log("Received global message:", message, "for conversation:", conversationId);
 
-      // If the message is from someone else (not current user), reload conversation list
+      // If the message is from someone else (not current user), reload conversation list and notif list
       if (message.sender.id !== currentClientId) {
         console.log("Message from another user, refreshing conversation list");
         setConversationListReload(prev => !prev);
+        setNotificationListReload(prev => !prev);
       }
     });
 
