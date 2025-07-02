@@ -3,28 +3,22 @@
 import { useState, useEffect, useRef } from 'react'
 import * as React from 'react'
 import { useLocalSearchParams, useRouter} from 'expo-router'
-import { DirectusUser, DirectusClientUser, DirectusRentalRequest, directus, getGearListings, getReviews, getRentalRequests, DirectusReview } from '../../lib/directus'
+import { DirectusUser, DirectusClientUser, directus, getGearListings, getReviews, DirectusReview } from '../../lib/directus'
 import { readItem } from '@directus/sdk'
 import { useGearListings } from '../../hooks/useGearListings'
 import { useReviews } from '../../hooks/useReviews'
-import { useRentalRequests } from '../../hooks/useRentalRequests'
 import { useAuth } from '../../contexts/AuthContext'
 import { Link } from 'expo-router'
 import { useClientWithUserID } from '../../hooks/useClientWithUserID'
-import { useUpdateRentalStatus } from '../../hooks/useUpdateRentalStatus'
-import { useCreateReview } from '../../hooks/useCreateReview'
 import { getAssetURL } from '../../lib/directus'
 import {
   View,
   Text,
   ScrollView,
   TouchableOpacity,
-  TextInput,
-  Alert,
   ActivityIndicator,
   Image,
   Pressable,
-  Platform
 } from 'react-native'
 import StarRating from '../../components/StarRating'
 
@@ -94,352 +88,6 @@ function ReviewsSection({
   )
 }
 
-// Rental Requests component is now a "dumb" component
-function RentalRequestsSection({
-  clientId,
-  requests,
-  loading,
-  error,
-  refetchRequests,
-}: {
-  clientId: string,
-  requests: DirectusRentalRequest[] | null,
-  loading: boolean,
-  error: Error | null,
-  refetchRequests: () => void
-}) {
-  const [role, setRole] = useState<'owner' | 'renter'>('owner');
-  const [expandedRequestId, setExpandedRequestId] = useState<string | null>(null)
-
-  const requestRef = useRef<ScrollView>(null);
-
-  const [reviewData, setReviewData] = useState<{
-    rating: number;
-    comment: string;
-  }>({
-    rating: 5,
-    comment: '',
-  })
-
-  // Filter requests based on the selected role
-  const filteredRequests = requests?.filter(req => {
-    if (role === 'owner') return req.owner.id === clientId
-    if (role === 'renter') return req.renter.id === clientId
-    return false
-  }) || []
-
-  const { updateStatus, loading: updateLoading } = useUpdateRentalStatus({
-    onSuccess: () => {
-      refetchRequests();
-    }
-  });
-
-  const { submitReview, loading: reviewLoading } = useCreateReview({
-    onSuccess: () => {
-      if(Platform.OS !== 'web'){
-      Alert.alert('Success', 'Review submitted successfully!');
-      }
-      setReviewData({ rating: 5, comment: '' });
-      refetchRequests();
-    }
-  });
-
-  const handleStatusChange = async (requestId: string, newStatus: 'approved' | 'rejected' | 'completed') => {
-    console.log("trying to update status on request #" + requestId)
-    
-    console.log(`Would show alert: Are you sure you want to mark this request as ${newStatus}?`)
-    if (Platform.OS === 'web') {
-      const confirmed = window.confirm(`Are you sure you want to mark this request as ${newStatus}?`)
-      if(confirmed){
-        try {
-          await updateStatus(requestId, newStatus);
-        } catch (error) {
-          console.error('Error updating status:', error);
-        
-        }
-      }
-    } else {
-      Alert.alert(
-          'Confirm Action',
-          `Are you sure you want to mark this request as ${newStatus}?`,
-          [
-            { text: 'Cancel', style: 'cancel' },
-            {
-              text: 'Confirm',
-              onPress: async () => {
-                try {
-                  await updateStatus(requestId, newStatus);
-                } catch (error) {
-                  console.error('Error updating status:', error);
-                  Alert.alert('Error', 'Failed to update request status. Please try again.');
-                }
-              }
-            }
-          ]
-        );
-    }
-
-  };
-
-  const handleReviewSubmit = async (request: DirectusRentalRequest) => {
-    if (!reviewData.comment) {
-      if(Platform.OS === 'web' ){
-        window.alert('Please enter a comment for your review.')
-      } else {
-      Alert.alert('Error', 'Please enter a comment for your review.');
-      }
-      return;
-
-    }
-
-    try {
-      let reviewed;
-      if (role === 'renter') {
-        reviewed = request.owner.id;
-      } else if (role === 'owner') {
-        reviewed = request.renter.id;
-      } else {
-        throw new Error('Invalid role');
-      }
-
-      await submitReview({
-        rental_request: request.id,
-        reviewer: clientId,
-        reviewed: reviewed,
-        rating: reviewData.rating,
-        comment: reviewData.comment,
-      });
-    } catch (error) {
-      console.error('Error submitting review:', error);
-      if(Platform.OS === 'web' ){
-        window.alert('Failed to submit review. Please try again.')
-      } else {
-        Alert.alert('Error', 'Failed to submit review. Please try again.');
-      }
-      
-    }
-  };
-
-  if (loading) {
-    return <Text className="text-gray-500">Loading rental requests...</Text>
-  }
-
-  if (error) {
-    return <Text className="text-red-500">Error loading rental requests: {error.message}</Text>
-  }
-
-  return (
-    <View className="mt-8">
-      <View className="bg-white shadow rounded-lg overflow-hidden">
-        <View className="px-4 py-5 border-b border-gray-200">
-          <View className="flex-row justify-between items-center">
-            <Text className="text-lg font-medium text-gray-900">Rental Requests</Text>
-            <View className="flex-row space-x-4">
-              <TouchableOpacity
-                onPress={() => setRole('renter')}
-                className={`px-4 py-2 rounded ${role === 'renter'
-                  ? 'bg-green-600'
-                  : 'bg-gray-200'
-                  }`}
-              >
-                <Text className={`${role === 'renter' ? 'text-white' : 'text-gray-700'}`}>
-                  As Renter
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => setRole('owner')}
-                className={`px-4 py-2 rounded ${role === 'owner'
-                  ? 'bg-green-600'
-                  : 'bg-gray-200'
-                  }`}
-              >
-                <Text className={`${role === 'owner' ? 'text-white' : 'text-gray-700'}`}>
-                  As Owner
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-
-        <View className="px-4 py-5">
-          {filteredRequests.length > 0 ? (
-            <ScrollView ref={requestRef} className="space-y-4">
-              {filteredRequests.map((request: DirectusRentalRequest) => (
-                <TouchableOpacity
-                  key={request.id}
-                  className={`border rounded-lg p-4 mb-4 border-gray-200`}
-                  onPress={() => setExpandedRequestId(expandedRequestId === request.id ? null : request.id)}
-                >
-                  <View className="flex-row justify-between items-start">
-                    <View className="flex-1">
-                      <Text className="text-lg font-medium text-gray-900">
-                        {request.gear_listing?.title || 'Untitled Gear'}
-                      </Text>
-                      <Text className="text-sm text-gray-500">
-                        Status: <Text className={`font-medium ${request.status === 'approved' ? 'text-green-600' :
-                          request.status === 'rejected' ? 'text-red-600' :
-                            'text-yellow-600'
-                          }`}>{request.status}</Text>
-                      </Text>
-                      <View className="flex-row items-center">
-                        <Text className="text-sm text-gray-500">
-                          {role === 'owner' ? 'Requested by: ' : 'Owner: '}
-                        </Text>
-                        <Link href={`/profile/${role === 'owner' ? request.renter.id : request.owner.id}`} asChild>
-                          <Pressable>
-                            <Text className="text-sm font-medium text-gray-900">
-                              {role === 'owner'
-                                ? `${request.renter.first_name} ${request.renter.last_name}`
-                                : `${request.owner.first_name} ${request.owner.last_name}`
-                              }
-                            </Text>
-                          </Pressable>
-                        </Link>
-                      </View>
-                      <Text className="text-sm text-gray-500">
-                        Dates: {new Date(request.start_date).toLocaleDateString()} -{' '}
-                        {new Date(request.end_date).toLocaleDateString()}
-                      </Text>
-                    </View>
-                    <View className="flex-row items-center space-x-2">
-                      <Link href={`/rentals/requests/${request.id}`} asChild>
-                        <Pressable>
-                          <Text className="text-green-600 text-sm font-medium">
-                            View Details
-                          </Text>
-                        </Pressable>
-                      </Link>
-                      <Text className={`text-gray-500 ${expandedRequestId === request.id ? 'rotate-180' : ''}`}>
-                        ▼
-                      </Text>
-                    </View>
-                  </View>
-
-                  {/* Expanded Content */}
-                  {expandedRequestId === request.id && (
-                    <View className="mt-4 pt-4 border-t border-gray-200">
-                      <View className="flex-row">
-                        <View className="flex-1 mr-4">
-                          <Text className="text-sm font-medium text-gray-900">Gear Details</Text>
-                          <Text className="text-sm text-gray-500">Category: {request.gear_listing?.category}</Text>
-                          <Text className="text-sm text-gray-500">Condition: {request.gear_listing?.condition}</Text>
-                        </View>
-                        <View className="flex-1">
-                          <Text className="text-sm font-medium text-gray-900">Rental Details</Text>
-                          <Text className="text-sm text-gray-500">
-                            Duration: {
-                              Math.ceil(
-                                (new Date(request.end_date).getTime() - new Date(request.start_date).getTime()) /
-                                (1000 * 60 * 60 * 24)
-                              )
-                            } days
-                          </Text>
-                          <Text className="text-sm text-gray-500">
-                            Total Price: ${
-                              Math.ceil(
-                                (new Date(request.end_date).getTime() - new Date(request.start_date).getTime()) /
-                                (1000 * 60 * 60 * 24)
-                              ) * request.gear_listing?.price
-                            }
-                          </Text>
-                        </View>
-                      </View>
-                      {request.gear_listing?.description && (
-                        <View className="mt-4">
-                          <Text className="text-sm font-medium text-gray-900">Description</Text>
-                          <Text className="text-sm text-gray-500 mt-1">{request.gear_listing.description}</Text>
-                        </View>
-                      )}
-
-                      {/* Status Update Section for Owners */}
-                      {role === 'owner' && request.status === 'pending' && (
-                        <View className="mt-4 pt-4 border-t border-gray-200">
-                          <Text className="text-sm font-medium text-gray-900 mb-2">Update Request Status</Text>
-                          <View className="flex-row gap-2">
-                            <TouchableOpacity
-                              onPress={() => handleStatusChange(request.id, 'approved')}
-                              disabled={updateLoading}
-                              className="px-4 py-2 bg-green-600 rounded-md opacity-100 disabled:opacity-50"
-                            >
-                              <Text className="text-white">Approve</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                              onPress={() => handleStatusChange(request.id, 'rejected')}
-                              disabled={updateLoading}
-                              className="px-4 py-2 bg-red-600 rounded-md opacity-100 disabled:opacity-50"
-                            >
-                              <Text className="text-white">Reject</Text>
-                            </TouchableOpacity>
-                          </View>
-                        </View>
-                      )}
-
-                      {/* Mark as Completed Section for Renters */}
-                      {role === 'renter' && request.status === 'approved' && (
-                        <View className="mt-4 pt-4 border-t border-gray-200">
-                          <Text className="text-sm font-medium text-gray-900 mb-2">Complete Rental</Text>
-                          <TouchableOpacity
-                            onPress={() => handleStatusChange(request.id, 'completed')}
-                            disabled={updateLoading}
-                            className="px-4 py-2 bg-green-600 rounded-md opacity-100 disabled:opacity-50"
-                          >
-                            <Text className="text-white">Mark as Completed</Text>
-                          </TouchableOpacity>
-                        </View>
-                      )}
-
-                      {/* Review Section */}
-                      {role === 'renter' && request.status === 'completed' && (
-                        <View className="mt-4 pt-4 border-t border-gray-200">
-                          <Text className="text-sm font-medium text-gray-900 mb-2">Write a Review</Text>
-                          <View className="space-y-4">
-                            <View>
-                              <Text className="block text-sm font-medium text-gray-700 mb-1">Rating</Text>
-                              <Pressable onPress={(e) => e.stopPropagation()}>
-                                <StarRating
-                                  rating={reviewData.rating}
-                                  onRatingChange={(newRating) => setReviewData(prev => ({ ...prev, rating: newRating }))}
-                                />
-                              </Pressable>
-                            </View>
-                            <View>
-                              <Text className="block text-sm font-medium text-gray-700 mb-1">Comment</Text>
-                              <Pressable onPress={(e) => e.stopPropagation()}>
-                                <TextInput
-                                  value={reviewData.comment}
-                                  onChangeText={(text) => setReviewData(prev => ({ ...prev, comment: text }))}
-                                  multiline
-                                  numberOfLines={3}
-                                  className="border border-gray-300 rounded-md p-3 text-gray-900"
-                                  placeholder="Write your review here..."
-                                  placeholderTextColor="#9CA3AF"
-                                />
-                              </Pressable>
-                            </View>
-                            <TouchableOpacity
-                              onPress={() => handleReviewSubmit(request)}
-                              disabled={reviewLoading}
-                              className="w-full px-4 py-2 bg-green-600 rounded-md opacity-100 disabled:opacity-50"
-                            >
-                              <Text className="text-white text-center">Submit Review</Text>
-                            </TouchableOpacity>
-                          </View>
-                        </View>
-                      )}
-                    </View>
-                  )}
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          ) : (
-            <Text className="text-gray-500">No rental requests</Text>
-          )}
-        </View>
-      </View>
-    </View>
-  )
-}
-
 export default function ProfilePage() {
   const { id } = useLocalSearchParams()
   const router = useRouter()
@@ -449,7 +97,6 @@ export default function ProfilePage() {
   const [client, setClient] = useState<DirectusClientUser | null>(null)
   const [listings, setListings] = useState<any[]>([])
   const [reviews, setReviews] = useState<DirectusReview[] | null>([])
-  const [rentalRequests, setRentalRequests] = useState<DirectusRentalRequest[] | null>([])
   const [error, setError] = useState<string | null>(null)
 
   const fetchProfileData = async () => {
@@ -484,13 +131,6 @@ export default function ProfilePage() {
       const reviewsData = await getReviews(clientData.id);
       setReviews(reviewsData.response);
       console.log("ProfilePage: Reviews fetched.");
-
-      // 4. Fetch Rental Requests (both as owner and renter)
-      console.log("ProfilePage: Fetching rental requests...");
-      const ownerReqs = await getRentalRequests(clientData.id, 'owner');
-      const renterReqs = await getRentalRequests(clientData.id, 'renter');
-      setRentalRequests([...ownerReqs, ...renterReqs]);
-      console.log("ProfilePage: Rental requests fetched.");
       
       setError(null);
     } catch (err: any) {
@@ -590,17 +230,6 @@ export default function ProfilePage() {
                 error={error ? new Error(error) : null}
               />
             </View>
-
-            {/* Rental Requests - only for own profile */}
-            {isOwnProfile && (
-              <RentalRequestsSection
-                clientId={client.id}
-                requests={rentalRequests}
-                loading={loading}
-                error={error ? new Error(error) : null}
-                refetchRequests={fetchProfileData}
-              />
-            )}
 
             {/* My Listings */}
             <View className="mt-8">
