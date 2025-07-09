@@ -1095,21 +1095,32 @@ export const updateRentalRequestStatus = async (
   token?: string
 ) => {
   try {
+    const correspondingConversation = await getConversationByRentalRequest(requestId);
+
     // For "approved" and "rejected", no token is needed as it's a manual owner action.
     if (status === "approved" || status === "rejected") {
-        console.log('Updating rental request status (no token required):', { requestId, status });
-        const response = await directus.request(
-          updateItem("rental_requests", requestId, {
-            status,
-          })
-        );
-        // Notification logic for approval/rejection
-        const currentRequest = await getRentalRequest(requestId);
-        await createAndPublishNotification({
-            client: currentRequest.renter.id,
-            request: currentRequest.id,
-        });
-        return response as DirectusRentalRequest;
+      const response = await directus.request(
+        updateItem("rental_requests", requestId, {
+          status,
+        })
+      );
+      // Notification logic for approval/rejection
+      try {
+        if (correspondingConversation) {
+
+          await sendMessage({
+            conversation: correspondingConversation.id,
+            sender: correspondingConversation.user_2.id,
+            message: `This rental request has been marked as ${status}.`,
+          });
+          console.log('Message sent in conversation:', correspondingConversation.id);
+        } else {
+          console.warn('No conversation found for rental request:', requestId);
+        }
+      } catch (error) {
+        console.error("Error sending notification after status update:", error);
+      }
+      return response as DirectusRentalRequest;
     }
 
     // For "ongoing" or "completed", a token is required.
@@ -1155,17 +1166,18 @@ export const updateRentalRequestStatus = async (
     );
     console.log('Status update response:', response);
 
-    // 5. Send notification to the other party
+    // 5. Send message to the other party
     try {
-      // The recipient is the one who ISN'T scanning
-      const recipientId = isPickup ? request.owner.id : request.renter.id;
-
-      await createAndPublishNotification({
-        client: recipientId,
-        request: request.id,
-      });
-      console.log('Notification sent to:', recipientId);
-
+      if (correspondingConversation) {
+        await sendMessage({
+          conversation: correspondingConversation.id,
+          sender: scannerClient.id,
+          message: `This rental request has been marked as ${status}.`,
+        });
+        console.log('Message sent in conversation:', correspondingConversation.id);
+      } else {
+        console.warn('No conversation found for rental request:', requestId);
+      }
     } catch (error) {
       console.error("Error sending notification after status update:", error);
     }
@@ -1175,7 +1187,7 @@ export const updateRentalRequestStatus = async (
     console.error("Error updating rental request status:", error);
     // Forward the specific error message from the validation checks
     if (error instanceof Error) {
-        throw error;
+      throw error;
     }
     throw new Error("Failed to update rental status.");
   }
@@ -1248,6 +1260,33 @@ export const getConversation = async (conversationId: string) => {
     return response as DirectusConversation;
   } catch (error) {
     console.error("Error getting conversation:", error);
+    throw error;
+  }
+};
+export const getConversationByRentalRequest = async (
+  rentalRequestId: string
+) => {
+  try {
+    const response = await directus.request(
+      readItems("conversations", {
+        filter: { rental_request: rentalRequestId },
+        fields: [
+          "*",
+          "user_1.*",
+          "user_2.*",
+          "user_1.user.*",
+          "user_2.user.*",
+          "rental_request.*",
+          //"gear_listing.*",
+        ],
+        limit: 1, // Assuming only one conversation per rental request
+      })
+    );
+    return response && response.length > 0
+      ? (response[0] as DirectusConversation)
+      : null;
+  } catch (error) {
+    console.error("Error getting conversation by rental request:", error);
     throw error;
   }
 };
@@ -1449,7 +1488,7 @@ export const getNotifications = async (clientID: string) => {
     // return [];
     // Instead of returning empty array, throw the error so it can be handled properly
     throw new Error(`Failed to fetch notifications: ${error instanceof Error ? error.message : 'Unknown error'}`);
-  
+
   }
 };
 export const getMessageNotifications = async (clientID: string) => {
@@ -1467,7 +1506,7 @@ export const getMessageNotifications = async (clientID: string) => {
     //return [];
     // Instead of returning empty array, throw the error so it can be handled properly
     throw new Error(`Failed to fetch notifications: ${error instanceof Error ? error.message : 'Unknown error'}`);
-  
+
   }
 };
 
