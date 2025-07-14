@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { createRentalRequest, createConversation, sendMessage } from "../lib/directus";
+import { createRentalRequest, createConversation, sendMessage, DirectusBundle } from "../lib/directus";
 
 interface UseRentalRequestOptions {
   onSuccess?: () => void;
@@ -11,24 +11,26 @@ export function useRentalRequest(options: UseRentalRequestOptions = {}) {
   const [error, setError] = useState<Error | null>(null);
 
   const submitRequest = async (data: {
-    gear_listing: string;
+    bundle: DirectusBundle;
     renter: string;
     owner: string;
-    start_date: string;
-    end_date: string;
     message?: string;
   }) => {
+    if (!data.bundle.start_date || !data.bundle.end_date) {
+      throw new Error("Bundle must have a start and end date.");
+    }
+
     try {
       setLoading(true);
       setError(null);
       const rentalRequest = await createRentalRequest({
-        gear_listing: data.gear_listing,
+        bundle: data.bundle.id,
         renter: data.renter,
         owner: data.owner,
-        start_date: data.start_date,
-        end_date: data.end_date,
+        start_date: data.bundle.start_date,
+        end_date: data.bundle.end_date,
       });
-      // Create or get conversation
+
       if (data.renter === data.owner) {
         throw new Error('Renter and owner cannot be the same user');
       }
@@ -38,21 +40,17 @@ export function useRentalRequest(options: UseRentalRequestOptions = {}) {
         rental_request: rentalRequest.id,
       }
       const conversation = await createConversation(conversationData);
-      console.log('Conversation created:', conversation);
 
-      // If initial message is provided, send it
+      const bundleTitle = data.bundle.gear_listings?.map(item => (item as any).gear_listings_id?.title).filter(Boolean).join(', ');
+
       const messageCreated = await sendMessage({
         conversation: conversation.id,
         sender: data.renter,
         message: data.message?.trim() ?
           data.message.trim() :
-          `This is an automated message to inform you of a new rental request for your ${rentalRequest.gear_listing.title}. Please review the request and respond at your earliest convenience.`,
+          `This is an automated message to inform you of a new rental request for your bundle: ${bundleTitle}. Please review the request and respond at your earliest convenience.`,
       });
-      console.log('Message sent:', messageCreated);
 
-
-      // alert('Rental request submitted successfully!');
-      // router.push('/rentals/requests');
       options.onSuccess?.();
     } catch (err) {
       const error = err as Error;

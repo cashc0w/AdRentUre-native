@@ -16,6 +16,7 @@ import {
   DirectusRentalRequest,
   getRentalRequests,
   getAssetURL,
+  removeGearFromPendingRequest,
 } from "../lib/directus";
 import { useClientWithUserID } from "../hooks/useClientWithUserID";
 import { useRouter } from "expo-router";
@@ -35,6 +36,8 @@ const RequestCard = ({
   updateLoading,
   onSubmitReview,
   reviewLoading,
+  onRemoveItem,
+  removingItemId,
 }: {
   request: DirectusRentalRequest;
   role: "owner" | "renter";
@@ -48,21 +51,25 @@ const RequestCard = ({
     reviewData: { rating: number; comment: string }
   ) => void;
   reviewLoading: boolean;
+  onRemoveItem: (requestId: string, bundleId: string, gearId: string) => void;
+  removingItemId: string | null;
 }) => {
   const router = useRouter();
   const isCompleted = COMPLETED_STATUSES.includes(request.status);
   const [reviewData, setReviewData] = useState({ rating: 5, comment: "" });
 
-  // Defensive check for missing data - we primarily need the gear listing.
-  if (!request.gear_listing?.id) {
+  // Defensive check for missing data - we now primarily need the bundle.
+  if (!request.bundle?.id) {
     return (
       <View className="bg-white rounded-xl shadow-md overflow-hidden mb-6 p-4">
         <Text className="text-red-500">
-          This rental request has incomplete gear data and cannot be displayed.
+          This rental request has incomplete bundle data and cannot be displayed.
         </Text>
       </View>
     );
   }
+
+  const gearItems = request.bundle.gear_listings?.map(item => (item as any).gear_listings_id).filter(Boolean);
 
   return (
     <View
@@ -70,96 +77,80 @@ const RequestCard = ({
         isCompleted ? "opacity-80" : ""
       }`}
     >
-      <Pressable onPress={() => router.push(`/gear/${request.gear_listing.id}`)}>
-        <View className="flex-row">
-          {/* Image */}
-          {request.gear_listing.gear_images &&
-          request.gear_listing.gear_images.length > 0 ? (
-            <Image
-              source={{
-                uri: getAssetURL(
-                  request.gear_listing.gear_images[0].directus_files_id.id
-                ),
-              }}
-              className={`${isCompleted ? "w-24 h-24" : "w-32 h-full"}`}
-            />
-          ) : (
-            <View
-              className={`bg-gray-200 flex items-center justify-center ${
-                isCompleted ? "w-24 h-24" : "w-32 h-full"
-              }`}
-            >
-              <Text className="text-gray-500 text-xs">No Image</Text>
-            </View>
-          )}
-
-          {/* Main Info */}
-          <View className="p-4 flex-1">
-            <Text
-              className={`font-bold ${
-                isCompleted ? "text-base" : "text-xl"
-              } text-gray-900`}
-            >
-              {request.gear_listing.title}
-            </Text>
-            <Text className="text-sm text-gray-600">
-              {new Date(request.start_date).toLocaleDateString()} -{" "}
-              {new Date(request.end_date).toLocaleDateString()}
-            </Text>
-            <View className="flex-row items-center mt-1">
-              <Text className="text-sm text-gray-600">
-                {role === "owner" ? "Renter:" : "Owner:"}{" "}
-              </Text>
-              {(role === "owner" && request.renter?.id) ||
-              (role === "renter" && request.owner?.id) ? (
-                <Pressable
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    router.push(
-                      `/profile/${
-                        role === "owner"
-                          ? request.renter.id
-                          : request.owner.id
-                      }`
-                    );
-                  }}
-                >
-                  <Text className="text-sm font-semibold text-green-600">
-                    {role === "owner"
-                      ? `${request.renter.first_name}`
-                      : `${request.owner.first_name}`}
-                  </Text>
-                </Pressable>
-              ) : (
-                <Text className="text-sm italic text-gray-400">
-                  (details unavailable)
-                </Text>
+      <View className="p-4">
+        {/* Header with dates and status */}
+        <Text className="text-sm text-gray-600">
+          {new Date(request.start_date).toLocaleDateString()} -{" "}
+          {new Date(request.end_date).toLocaleDateString()}
+        </Text>
+        <Text
+          className={`text-sm font-semibold capitalize mt-1 ${
+            request.status === "approved" ? "text-green-600" :
+            request.status === "rejected" ? "text-red-600" :
+            request.status === "ongoing" ? "text-blue-600" :
+            "text-yellow-600"
+          }`}
+        >
+          Status: {request.status}
+        </Text>
+      </View>
+      
+      {/* List of Gear Items */}
+      <View className="px-4">
+        {gearItems.map((gear, index) => {
+          const isRemoving = removingItemId === gear.id;
+          return (
+            <View key={gear.id} className="flex-row items-center">
+              <Pressable onPress={() => router.push(`/gear/${gear.id}`)} className={`flex-1 flex-row items-center py-3 ${index < gearItems.length - 1 ? 'border-b border-gray-100' : ''}`}>
+                {gear.gear_images?.[0]?.directus_files_id?.id ? (
+                  <Image
+                    source={{ uri: getAssetURL(gear.gear_images[0].directus_files_id.id) }}
+                    className="w-16 h-16 rounded-lg bg-gray-200"
+                  />
+                ) : (
+                  <View className="w-16 h-16 rounded-lg bg-gray-200 flex items-center justify-center">
+                    <Text className="text-gray-500 text-xs">No Image</Text>
+                  </View>
+                )}
+                <View className="flex-1 ml-3">
+                  <Text className="font-semibold text-gray-800">{gear.title}</Text>
+                  <Text className="text-green-600 text-sm">${gear.price}/day</Text>
+                </View>
+              </Pressable>
+              {role === 'renter' && request.status === 'pending' && (
+                <TouchableOpacity onPress={() => onRemoveItem(request.id, request.bundle.id, gear.id)} disabled={isRemoving} className="p-2">
+                  {isRemoving ? <ActivityIndicator size="small" /> : <Text className="text-red-500 text-xl">🗑️</Text>}
+                </TouchableOpacity>
               )}
             </View>
-            <View className="flex-row items-center mt-2">
-              <Text
-                className={`text-sm font-semibold capitalize ${
-                  request.status === "approved"
-                    ? "text-green-600"
-                    : request.status === "rejected"
-                    ? "text-red-600"
-                    : request.status === "ongoing"
-                    ? "text-blue-600"
-                    : "text-yellow-600"
-                }`}
-              >
-                {request.status}
-              </Text>
-              {request.status === "approved" && role === "owner" && (
-                <Text className="text-gray-600 italic ml-2">
-                  - awaiting handover
-                </Text>
-              )}
-            </View>
-          </View>
-        </View>
-      </Pressable>
+          )
+        })}
+      </View>
 
+      {/* Footer with user info */}
+      <View className="p-4 flex-row items-center mt-1 border-t border-gray-200">
+        <Text className="text-sm text-gray-600">
+          {role === "owner" ? "Renter:" : "Owner:"}{" "}
+        </Text>
+        {(role === "owner" && request.renter?.id) ||
+        (role === "renter" && request.owner?.id) ? (
+          <Pressable
+            onPress={(e) => {
+              e.stopPropagation();
+              router.push(`/profile/${role === "owner" ? request.renter.id : request.owner.id}`);
+            }}
+          >
+            <Text className="text-sm font-semibold text-green-600">
+              {role === "owner" ? `${request.renter.first_name}` : `${request.owner.first_name}`}
+            </Text>
+          </Pressable>
+        ) : (
+          <Text className="text-sm italic text-gray-400">
+            (details unavailable)
+          </Text>
+        )}
+      </View>
+      
       {/* ACTIONS SECTION */}
       {!isCompleted && (
         <View className="p-4 border-t border-gray-200">
@@ -280,6 +271,7 @@ export default function RentalsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [role, setRole] = useState<"renter" | "owner">("owner");
+  const [removingItemId, setRemovingItemId] = useState<string | null>(null);
 
   const fetchRequests = async () => {
     if (!client) return;
@@ -344,6 +336,31 @@ export default function RentalsPage() {
       reviewer: client.id,
       reviewed: reviewedId,
     });
+  };
+
+  const handleRemoveItemFromRequest = (requestId: string, bundleId: string, gearId: string) => {
+    Alert.alert(
+      "Remove Item",
+      "Are you sure you want to remove this item from your request?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            setRemovingItemId(gearId);
+            try {
+              await removeGearFromPendingRequest(requestId, bundleId, gearId);
+              fetchRequests(); // Refetch data on success
+            } catch (error) {
+              Alert.alert("Error", "Failed to remove item.");
+            } finally {
+              setRemovingItemId(null);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const { ongoing, completed } = useMemo(() => {
@@ -438,6 +455,8 @@ export default function RentalsPage() {
                 updateLoading={updateLoading}
                 onSubmitReview={handleReviewSubmit}
                 reviewLoading={reviewLoading}
+                onRemoveItem={handleRemoveItemFromRequest}
+                removingItemId={removingItemId}
               />
             ))
           ) : (
@@ -462,6 +481,8 @@ export default function RentalsPage() {
                 updateLoading={updateLoading}
                 onSubmitReview={handleReviewSubmit}
                 reviewLoading={reviewLoading}
+                onRemoveItem={handleRemoveItemFromRequest}
+                removingItemId={removingItemId}
               />
             ))
           ) : (

@@ -19,6 +19,7 @@ import {
   type AuthenticationData,
   staticToken,
   logout as sdkLogout,
+  createItems,
 } from "@directus/sdk";
 import { read } from "fs";
 import { get } from "http";
@@ -147,7 +148,7 @@ export interface DirectusGearListing {
 
 export interface DirectusRentalRequest {
   id: string;
-  gear_listing: DirectusGearListing;
+  bundle: DirectusBundle;
   renter: DirectusClientUser;
   owner: DirectusClientUser;
   start_date: string;
@@ -155,6 +156,15 @@ export interface DirectusRentalRequest {
   status: string;
   handover_token?: string;
   handover_token_expires_at?: string;
+}
+
+export interface DirectusBundle {
+  id: string;
+  renter: DirectusClientUser;
+  owner: DirectusClientUser;
+  gear_listings: DirectusGearListing[];
+  start_date?: string;
+  end_date?: string;
 }
 
 export interface DirectusReview {
@@ -836,9 +846,219 @@ function generateRandomPolygonAroundPoint(
   };
 }
 
+
+export const createBundle = async (data: {
+  renter: string;
+  owner: string;
+  start_date?: string;
+  end_date?: string;
+}) => {
+  try {
+    const response = await directus.request(createItem("bundles", data));
+    return response as DirectusBundle;
+  } catch (error) {
+    console.error("Error creating bundle:", error);
+    throw error;
+  }
+};
+
+export const getBundles = async (clientId: string) => {
+  try {
+    const response = await directus.request(readItems("bundles", { 
+      filter: { renter: { _eq: clientId } },
+      fields: [
+        '*', 
+        'owner.*', 
+        'gear_listings.gear_listings_id.*',
+        'gear_listings.gear_listings_id.gear_images.directus_files_id.*'
+      ]
+    }));
+    return response as DirectusBundle[];
+  } catch (error) {
+    console.error("Error getting bundles:", error);
+    throw error;
+  }
+};
+
+export const addGearToBundle = async (bundleId: string, gearId: string) => {
+  try {
+    // Use the SDK's relational update feature to create the link.
+    // This is more reliable than manually creating the junction item.
+    await directus.request(updateItem('bundles', bundleId, {
+      gear_listings: {
+        create: [{
+          gear_listings_id: gearId
+        }]
+      }
+    }));
+
+    // Re-fetch the updated bundle to ensure all relations are populated.
+    const updatedBundle = await directus.request(readItem('bundles', bundleId, {
+      fields: [
+        '*', 
+        'owner.*', 
+        'gear_listings.gear_listings_id.*',
+        'gear_listings.gear_listings_id.gear_images.directus_files_id.*'
+      ]
+    }));
+
+    return updatedBundle as DirectusBundle;
+  } catch (error) {
+    console.error('Error adding gear to bundle:', error);
+    throw error;
+  }
+};
+
+export const removeGearFromBundle = async (bundleId: string, gearId: string) => {
+  try {
+    // 1. Find the specific link in the junction table to remove
+    const junctionItems = await directus.request(readItems('bundles_gear_listings', {
+      filter: {
+        _and: [
+          { bundles_id: { _eq: bundleId } },
+          { gear_listings_id: { _eq: gearId } }
+        ]
+      },
+      limit: 1 // We only need to find one to delete it
+    }));
+
+    if (!junctionItems || junctionItems.length === 0) {
+      console.warn('Attempted to remove an item that was not in the bundle.');
+      return { bundleDeleted: false };
+    }
+
+    const junctionItemId = junctionItems[0].id;
+
+    // 2. Delete the link item
+    await directus.request(deleteDirectusItem('bundles_gear_listings', junctionItemId));
+
+    // 3. Check the bundle to see if it's now empty
+    const updatedBundle = await directus.request(readItem('bundles', bundleId, {
+      fields: ['gear_listings']
+    }));
+
+    // 4. If the bundle has no more linked items, delete the bundle itself
+    if (updatedBundle && updatedBundle.gear_listings.length === 0) {
+      await directus.request(deleteDirectusItem('bundles', bundleId));
+      return { bundleDeleted: true };
+    }
+
+    return { bundleDeleted: false };
+
+  } catch (error) {
+    console.error('Error removing gear from bundle:', error);
+    throw error;
+  }
+};
+
+export const removeGearFromPendingRequest = async (requestId: string, bundleId: string, gearId: string) => {
+  try {
+    // 1. Read the bundle to count how many items it has.
+    const bundle = await directus.request(readItem('bundles', bundleId, { fields: ['gear_listings'] }));
+
+    if (bundle && bundle.gear_listings && bundle.gear_listings.length > 1) {
+      // 2a. If more than one item, just remove the specific gear link.
+      const junctionItems = await directus.request(readItems('bundles_gear_listings', {
+        filter: {
+          _and: [{ bundles_id: { _eq: bundleId } }, { gear_listings_id: { _eq: gearId } }]
+        },
+        limit: 1
+      }));
+      if (junctionItems.length > 0) {
+        await directus.request(deleteDirectusItem('bundles_gear_listings', junctionItems[0].id));
+      }
+    } else {
+      // 2b. If it's the last item, cancel the entire rental request.
+      await directus.request(updateItem('rental_requests', requestId, { status: 'cancelled' }));
+    }
+  } catch (error) {
+    console.error('Error removing gear from pending request:', error);
+    throw error;
+  }
+};
+
+export const createBundleWithListings = async (data: {
+  renter: string;
+  owner: string;
+  startDate: string;
+  endDate: string;
+  gearIds: string[];
+}) => {
+  try {
+    // 1. Create the parent bundle with dates
+    const newBundle = await createBundle({
+      renter: data.renter,
+      owner: data.owner,
+      start_date: data.startDate,
+      end_date: data.endDate,
+    });
+
+    if (!newBundle?.id) {
+      throw new Error("Failed to create bundle shell.");
+    }
+
+    // 2. Prepare the junction table entries for all selected gear
+    const junctionItems = data.gearIds.map(gearId => ({
+      bundles_id: newBundle.id,
+      gear_listings_id: gearId
+    }));
+
+    // 3. Create all junction items in a single batch request
+    if (junctionItems.length > 0) {
+      await directus.request(createItems('bundles_gear_listings', junctionItems));
+    }
+
+    return newBundle;
+  } catch (error) {
+    console.error('Error creating bundle with listings:', error);
+    throw error;
+  }
+};
+
+export const checkAvailability = async (gearId: string, startDate: string, endDate: string): Promise<boolean> => {
+  try {
+    // Step 1: Find all bundles that contain the gear item.
+    const bundlesWithGear = await directus.request(readItems('bundles_gear_listings', {
+      filter: { gear_listings_id: { _eq: gearId } },
+      fields: ['bundles_id']
+    }));
+
+    const bundleIds = bundlesWithGear.map(item => item.bundles_id);
+
+    if (bundleIds.length === 0) {
+      return true; // If no bundles contain this gear, it's definitely available.
+    }
+
+    // Step 2: Check if any of those bundles are in an active, overlapping rental request.
+    const overlappingRequestsFilter = {
+      _and: [
+        { bundle: { _in: bundleIds } },
+        { status: { _in: ['approved', 'ongoing'] } },
+        {
+          _and: [
+            { start_date: { _lte: endDate } },
+            { end_date: { _gte: startDate } }
+          ]
+        }
+      ]
+    };
+    
+    const overlappingRequests = await directus.request(readItems('rental_requests', {
+      filter: overlappingRequestsFilter,
+      limit: 1
+    }));
+
+    return overlappingRequests.length === 0;
+
+  } catch (error) {
+    console.error('Error checking availability:', error);
+    return false;
+  }
+};
+
 // Rental request functions
 export const createRentalRequest = async (requestData: {
-  gear_listing: string;
+  bundle: string;
   renter: string;
   owner: string;
   start_date: string;
@@ -894,11 +1114,12 @@ export const getRentalRequests = async (
         filter: query,
         fields: [
           "*",
-          "gear_listing.*",
           "renter.*",
           "owner.*",
-          "gear_listing.gear_images.*",
-          "gear_listing.gear_images.directus_files_id.*",
+          "bundle.*",
+          "bundle.owner.*",
+          "bundle.gear_listings.gear_listings_id.*",
+          "bundle.gear_listings.gear_listings_id.gear_images.directus_files_id.*"
         ],
         meta: "total_count",
       })
@@ -1227,7 +1448,8 @@ export const getUserConversations = async (userID: string) => {
           "user_1.user.*",
           "user_2.user.*",
           "rental_request.*",
-          //"gear_listing.*",
+          "rental_request.bundle.gear_listings.gear_listings_id.*",
+          "rental_request.bundle.gear_listings.gear_listings_id.gear_images.directus_files_id.*"
         ],
         sort: ["-last_change"], // Sort by last change date
       })
@@ -1253,7 +1475,8 @@ export const getConversation = async (conversationId: string) => {
           "user_1.user.*",
           "user_2.user.*",
           "rental_request.*",
-          //"gear_listing.*",
+          "rental_request.bundle.gear_listings.gear_listings_id.*",
+          "rental_request.bundle.gear_listings.gear_listings_id.gear_images.directus_files_id.*"
         ],
       })
     );

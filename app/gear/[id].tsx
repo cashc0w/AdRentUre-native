@@ -1,14 +1,14 @@
-import { View, Text, ScrollView, Image, TouchableOpacity, Dimensions, ActivityIndicator, Platform, TextInput, Modal, Pressable } from 'react-native'
+import { View, Text, ScrollView, Image, TouchableOpacity, Dimensions, ActivityIndicator, Platform, TextInput, Modal, Pressable, Alert } from 'react-native'
 import DateTimePicker from '@react-native-community/datetimepicker'
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useMemo } from 'react'
 import { Router, useLocalSearchParams, useRouter } from 'expo-router'
-import { directus, DirectusGearListing, getGearListing, getClientWithUserID } from '../../lib/directus'
+import { directus, DirectusGearListing, getGearListing, getCurrentClient, getGearListings, checkAvailability } from '../../lib/directus'
 import { useAuth } from '../../contexts/AuthContext'
-import { formatDistanceToNow, set } from 'date-fns'
+import { formatDistanceToNow } from 'date-fns'
 import { initializeMapbox, MAPBOX_TOKEN, isExpoGo } from '../../lib/mapbox'
-import { DirectusUser } from '@directus/sdk'
-import { useRentalRequest } from '../../hooks/useCreateRentalRequest'
-import WebMap from '../../components/WebMap'
+import { useBundles } from '../../hooks/usebundles';
+import { Checkbox } from 'expo-checkbox';
+import WebMap from '../../components/WebMap';
 
 const { width } = Dimensions.get('window')
 
@@ -27,18 +27,85 @@ export default function GearDetail() {
   const [message, setMessage] = useState('')
   const [listing, setListing] = useState<DirectusGearListing | null>(null)
   const [error, setError] = useState<Error | null>(null)
-  const [showStartDatePicker, setShowStartDatePicker] = useState(false);
-  const [showEndDatePicker, setShowEndDatePicker] = useState(false);
   
-  const [isDatePickerModalVisible, setDatePickerModalVisible] = useState(false);
-  const [datePickerTarget, setDatePickerTarget] = useState<'start' | 'end' | null>(null);
-  const [tempDate, setTempDate] = useState<Date>(new Date());
+  const { createBundleWithItems } = useBundles();
+  
+  const [otherListings, setOtherListings] = useState<DirectusGearListing[]>([]);
+  
+  // State for the modal
+  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [modalStartDate, setModalStartDate] = useState<Date>(new Date());
+  const [modalEndDate, setModalEndDate] = useState<Date | null>(null);
+  const [availabilityMap, setAvailabilityMap] = useState<Record<string, 'available' | 'unavailable' | 'checking'>>({});
+  const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set());
+  const [bundleCreationLoading, setBundleCreationLoading] = useState(false);
 
-  const { submitRequest, loading: submitting, error: submitError } = useRentalRequest({
-    onSuccess: () => {
-      alert('Rental request submitted successfully!')
-    },
-  })
+  const allOwnerListings = useMemo(() => {
+    if (!gear) return [];
+    // Ensure the current gear is first in the list
+    return [gear, ...otherListings.filter(l => l.id !== gear.id)];
+  }, [gear, otherListings]);
+
+  // Handler for date changes inside the modal (corrected type)
+  const handleDateCheck = async (start: Date, end: Date | null) => {
+    setModalStartDate(start);
+    setModalEndDate(end);
+
+    if (!end) {
+      // Don't run check if end date isn't set
+      setAvailabilityMap({});
+      return;
+    }
+
+    setCheckedItems(new Set());
+    
+    const availabilityPromises = allOwnerListings.map(async (listing) => {
+      setAvailabilityMap(prev => ({ ...prev, [listing.id]: 'checking' }));
+      const isAvailable = await checkAvailability(listing.id, start.toISOString(), end.toISOString());
+      return { id: listing.id, status: isAvailable ? 'available' : 'unavailable' };
+    });
+
+    const results = await Promise.all(availabilityPromises);
+    const newAvailabilityMap = results.reduce((acc, result) => {
+      acc[result.id] = result.status as 'available' | 'unavailable' | 'checking';
+      return acc;
+    }, {} as Record<string, 'available' | 'unavailable' | 'checking'>);
+    setAvailabilityMap(newAvailabilityMap);
+  };
+
+  // Handler for checkbox changes
+  const handleToggleChecked = (itemId: string) => {
+    setCheckedItems(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(itemId)) {
+        newSet.delete(itemId);
+      } else {
+        newSet.add(itemId);
+      }
+      return newSet;
+    });
+  };
+
+  // Handler for submitting the bundle
+  const handleCreateBundle = async () => {
+    if (!modalStartDate || !modalEndDate || !gear?.owner?.id || checkedItems.size === 0) return;
+    setBundleCreationLoading(true);
+    try {
+      await createBundleWithItems({
+        ownerId: gear.owner.id,
+        gearIds: Array.from(checkedItems),
+        startDate: modalStartDate,
+        endDate: modalEndDate,
+      });
+      Alert.alert('Success!', 'Bundle created and added to your cart.');
+      setIsModalVisible(false);
+    } catch (error) {
+      Alert.alert('Error', error instanceof Error ? error.message : 'Could not create bundle.');
+    } finally {
+      setBundleCreationLoading(false);
+    }
+  };
+
 
   useEffect(() => {
     if (!isExpoGo && Platform.OS !== 'web') {
@@ -51,40 +118,44 @@ export default function GearDetail() {
     }
   }, [])
 
-  useEffect(() => {
-    if (id) {
-      fetchGearItem()
-    }
-  }, [id])
-
-  useEffect(() => {
-    async function fetchListing() {
-      try {
-        setLoading(true)
-        const data = await getGearListing(id as string)
-        setListing(data)
-      } catch (err) {
-        setError(err as Error)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    if (id) {
-      fetchListing()
-    }
-  }, [id]) 
-  
-  const fetchGearItem = async () => {
+  const fetchAllData = async () => {
+    if (!id) return;
     try {
-      const response = await getGearListing(id)
-      setGear(response)
-    } catch (error) {
-      console.error('Error fetching gear item:', error)
+      setLoading(true);
+      setError(null);
+
+      // 1. Fetch the main gear listing
+      const gearData = await getGearListing(id as string);
+      setGear(gearData);
+      setListing(gearData); // Keep both states in sync for now
+
+      if (!gearData || !gearData.owner?.id) {
+        throw new Error('Gear or owner not found.');
+      }
+
+      // 2. Fetch other listings from the same owner
+      const allOwnerListings = await getGearListings({ filters: { owner: gearData.owner.id } });
+      
+      // 3. Filter out the current listing to get only the "other" ones
+      const filteredOtherListings = allOwnerListings.filter((item: DirectusGearListing) => item.id !== id);
+      setOtherListings(filteredOtherListings);
+
+    } catch (err) {
+      setError(err as Error);
+      console.error("Failed to fetch page data:", err);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
+
+  useEffect(() => {
+    fetchAllData();
+  }, [id]);
+
+  // Clear availability error when dates change
+  useEffect(() => {
+    // setAvailabilityError(null); // This state variable was removed
+  }, [startDate, endDate]);
 
   const formatDate = (date: Date | null) => {
     if (!date) return 'Select date';
@@ -92,85 +163,91 @@ export default function GearDetail() {
   };
 
   const openDatePicker = (target: 'start' | 'end') => {
-    setDatePickerTarget(target);
+    // setDatePickerTarget(target); // This state variable was removed
     const dateToEdit = target === 'start' ? startDate : endDate;
     const initialDate = dateToEdit || (target === 'end' ? startDate : new Date()) || new Date();
-    setTempDate(initialDate);
+    // setTempDate(initialDate); // This state variable was removed
 
     if (Platform.OS === 'ios') {
-      setDatePickerModalVisible(true);
+      // setDatePickerModalVisible(true); // This state variable was removed
     } else {
       // For Android, we use the default picker which is already a modal
-      setShowStartDatePicker(target === 'start');
-      setShowEndDatePicker(target === 'end');
+      // setShowStartDatePicker(target === 'start'); // This state variable was removed
+      // setShowEndDatePicker(target === 'end'); // This state variable was removed
     }
   };
 
   const handleDateChange = (event: any, selectedDate?: Date) => {
     const isAndroid = Platform.OS === 'android';
     if (isAndroid) {
-      setShowStartDatePicker(false);
-      setShowEndDatePicker(false);
+      // setShowStartDatePicker(false); // This state variable was removed
+      // setShowEndDatePicker(false); // This state variable was removed
     }
 
     if ((isAndroid && event.type === 'set') || !isAndroid) {
       if (selectedDate) {
         if (isAndroid) {
-          if (datePickerTarget === 'start') {
-            setStartDate(selectedDate);
-            if (endDate && selectedDate > endDate) setEndDate(null);
-          } else {
-            setEndDate(selectedDate);
-          }
-          setDatePickerTarget(null);
+          // if (datePickerTarget === 'start') { // This state variable was removed
+          //   setStartDate(selectedDate);
+          //   if (endDate && selectedDate > endDate) setEndDate(null);
+          // } else {
+          //   setEndDate(selectedDate);
+          // }
+          // setDatePickerTarget(null); // This state variable was removed
         } else {
-          setTempDate(selectedDate);
+          // setTempDate(selectedDate); // This state variable was removed
         }
       }
     } else {
-      if (isAndroid) setDatePickerTarget(null);
+      // if (isAndroid) setDatePickerTarget(null); // This state variable was removed
     }
   };
 
   const confirmDate = () => {
-    if (datePickerTarget === 'start') {
-      setStartDate(tempDate);
-      if (endDate && tempDate > endDate) {
-        setEndDate(null);
-      }
-    } else {
-      setEndDate(tempDate);
-    }
-    setDatePickerModalVisible(false);
-    setDatePickerTarget(null);
+    // if (datePickerTarget === 'start') { // This state variable was removed
+    //   setStartDate(tempDate);
+    //   if (endDate && tempDate > endDate) {
+    //     setEndDate(null);
+    //   }
+    // } else {
+    //   setEndDate(tempDate);
+    // }
+    // setDatePickerModalVisible(false); // This state variable was removed
+    // setDatePickerTarget(null); // This state variable was removed
   };
 
-  const handleSubmit = async () => {
-    if (!startDate || !endDate || !listing) return
+  // This section is no longer needed as requests are made from the cart.
+  // const handleSubmit = async () => {
+  //   if (!startDate || !endDate || !listing) return
 
-    if (!user) {
-      alert('You must be logged in to submit a rental request')
-      return
-    }
+  //   if (!user) {
+  //     alert('You must be logged in to submit a rental request')
+  //     return
+  //   }
 
-    const clientRenter = await getClientWithUserID(user.id)
-    if (!clientRenter) {
-      throw new Error('Failed to get or create client renter')
-    }
+  //   const clientRenter = await getClientWithUserID(user.id)
+  //   if (!clientRenter) {
+  //     throw new Error('Failed to get or create client renter')
+  //   }
 
-    if (!listing.owner) {
-      throw new Error('Gear listing has no owner')
-    }
+  //   if (!listing.owner) {
+  //     throw new Error('Gear listing has no owner')
+  //   }
 
-    const rentalRequest = await submitRequest({
-      gear_listing: listing.id,
-      renter: clientRenter.id,
-      owner: listing.owner.id,
-      start_date: startDate.toISOString(),
-      end_date: endDate.toISOString(),
-      message: message?.trim(),
-    })
-  }
+  //   const rentalRequest = await submitRequest({
+  //     gear_listing: listing.id,
+  //     renter: clientRenter.id,
+  //     owner: listing.owner.id,
+  //     start_date: startDate.toISOString(),
+  //     end_date: endDate.toISOString(),
+  //     message: message?.trim(),
+  //   })
+  // }
+
+  // const bundleForOwnerExists = bundles.some(b => b.owner?.id === gear?.owner.id); // This state variable was removed
+  // const datesRequired = !bundleForOwnerExists; // This state variable was removed
+
+  // const isAlreadyInBundle = bundles.some(b => b.gear_listings?.some(item => String((item as any).gear_listings_id?.id) === id)); // This state variable was removed
 
   // Web-specific date input component
   const WebDateInput = ({ value, onChange, placeholder, disabled = false }: {
@@ -339,6 +416,9 @@ export default function GearDetail() {
           </View>
         </View>
 
+        {/* Availability Badge */}
+       
+
         {/* Owner Information */}
         <View className="mt-6 flex-row items-center">
           <View className="w-12 h-12 rounded-full bg-gray-200 items-center justify-center">
@@ -371,151 +451,107 @@ export default function GearDetail() {
             <View className="bg-gray-50 p-6 rounded-lg mt-6">
               <Text className="text-xl font-semibold mb-4 text-gray-900">Request to Rent</Text>
 
-              {submitError && (
-                <View className="mb-4 bg-red-100 border border-red-400 px-4 py-3 rounded">
-                  <Text className="text-red-700 font-bold">Error: </Text>
-                  <Text className="text-red-700">{submitError.message}</Text>
+              {/* Conditional Date Pickers */}
+              {/* datesRequired && !isAlreadyInBundle && ( // This state variable was removed */}
+                <View>
+                  
+                  {/* availabilityError && ( // This state variable was removed */}
+                    
+                  {/* ) */}
                 </View>
-              )}
-
-              <View className="flex-row gap-4 mb-4">
-                {/* Start Date */}
-                <View className="flex-1">
-                  <Text className="text-sm font-medium text-gray-700 mb-1">
-                    Start Date
-                  </Text>
-                  {Platform.OS === 'web' ? (
-                    <WebDateInput
-                      value={startDate}
-                      onChange={setStartDate}
-                      placeholder="Select start date"
-                    />
-                  ) : (
-                    <TouchableOpacity
-                      onPress={() => openDatePicker('start')}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white"
-                    >
-                      <Text className={`${startDate ? 'text-blue-500' : 'text-gray-400'}`}>
-                        {formatDate(startDate)}
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-
-                {/* End Date */}
-                <View className="flex-1">
-                  <Text className="text-sm font-medium text-gray-700 mb-1">
-                    End Date
-                  </Text>
-                  {Platform.OS === 'web' ? (
-                    <WebDateInput
-                      value={endDate}
-                      onChange={setEndDate}
-                      placeholder="Select end date"
-                      disabled={!startDate}
-                    />
-                  ) : (
-                    <TouchableOpacity
-                      onPress={() => openDatePicker('end')}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white"
-                      disabled={!startDate}
-                    >
-                      <Text className={`${endDate ? 'text-blue-500' : 'text-gray-400'}`}>
-                        {formatDate(endDate)}
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </View>
-
-              {/* Native Date Pickers for Mobile */}
-              {Platform.OS === 'android' && showStartDatePicker && (
-                <DateTimePicker
-                  value={startDate || new Date()}
-                  mode="date"
-                  display="default"
-                  onChange={handleDateChange}
-                  minimumDate={new Date()}
-                />
-              )}
-
-              {Platform.OS === 'android' && showEndDatePicker && (
-                <DateTimePicker
-                  value={endDate || startDate || new Date()}
-                  mode="date"
-                  display="default"
-                  onChange={handleDateChange}
-                  minimumDate={startDate || new Date()}
-                />
-              )}
-
-              {/* Custom Modal for iOS */}
-              {Platform.OS === 'ios' && (
-                <Modal
-                  animationType="slide"
-                  transparent={true}
-                  visible={isDatePickerModalVisible}
-                  onRequestClose={() => setDatePickerModalVisible(false)}
+              {/* ) */}
+              {/* Submit and Add to Cart Buttons */}
+              {user && (
+                <TouchableOpacity
+                  onPress={() => setIsModalVisible(true)}
+                  className="w-full py-3 px-6 rounded-lg mt-4 bg-blue-600"
                 >
-                  <Pressable 
-                    style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' }}
-                    onPress={() => setDatePickerModalVisible(false)}
-                  >
-                    <View style={{ backgroundColor: 'white' }}>
-                      <DateTimePicker
-                        value={tempDate}
-                        mode="date"
-                        display="inline"
-                        onChange={handleDateChange}
-                        minimumDate={datePickerTarget === 'end' ? startDate || new Date() : new Date()}
-                        themeVariant="light"
-                        style={{ height: 35 }}
-                      />
-                      
-                      <TouchableOpacity
-                        onPress={confirmDate}
-                        style={{ backgroundColor: '#22c55e', padding: 20, alignItems: 'center' }}
-                      >
-                        <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>Confirm</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </Pressable>
-                </Modal>
+                  <Text className="text-white text-center font-bold text-lg">
+                    Check Availability & Build Bundle
+                  </Text>
+                </TouchableOpacity>
               )}
-
-              {/* Message Input */}
-              <View className="mb-4">
-                <Text className="text-sm font-medium text-gray-700 mb-1">
-                  Message (Optional)
-                </Text>
-                <TextInput
-                  value={message}
-                  onChangeText={setMessage}
-                  multiline
-                  numberOfLines={3}
-                  className="text-blue-500 w-full px-3 py-2 border border-gray-300 rounded-md bg-white"
-                  placeholder="Add a message to the owner..."
-                  placeholderTextColor="#9CA3AF"
-                  textAlignVertical="top"
-                />
-              </View>
-
-              {/* Submit Button */}
-              <TouchableOpacity
-                className={`w-full py-3 px-6 rounded-lg ${!startDate || !endDate || submitting
-                  ? 'bg-gray-400'
-                  : 'bg-green-500'
-                  }`}
-                onPress={handleSubmit}
-                disabled={!startDate || !endDate || submitting}
-              >
-                <Text className="text-white text-center font-medium">
-                  {submitting ? 'Submitting...' : 'Submit Request'}
-                </Text>
-              </TouchableOpacity>
             </View>
           )}
         </View>
+
+        {/* BUNDLE BUILDER MODAL */}
+        <Modal
+          animationType="slide"
+          transparent={true}
+          visible={isModalVisible}
+          onRequestClose={() => setIsModalVisible(false)}
+        >
+          <View className="flex-1 justify-center items-center bg-black/50 p-4">
+            <View className="bg-white rounded-xl w-full max-w-2xl max-h-[90%] p-6">
+              <Text className="text-2xl font-bold mb-4">Build Your Bundle</Text>
+              
+              {/* Date Pickers */}
+              <View className="flex-row gap-4 mb-4">
+                <View className="flex-1">
+                  <Text className="font-semibold mb-1">Start Date</Text>
+                  <DateTimePicker value={modalStartDate} onChange={(e,d) => d && handleDateCheck(d, modalEndDate)} />
+                </View>
+                <View className="flex-1">
+                  <Text className="font-semibold mb-1">End Date</Text>
+                  <DateTimePicker value={modalEndDate || modalStartDate} onChange={(e,d) => d && handleDateCheck(modalStartDate, d)} minimumDate={modalStartDate} />
+                </View>
+              </View>
+
+              {/* Gear List */}
+              <ScrollView className="border-t border-b border-gray-200">
+                {allOwnerListings.map(listing => {
+                  const status = availabilityMap[listing.id];
+                  const isChecked = checkedItems.has(listing.id);
+                  return (
+                    <View key={listing.id} className="flex-row items-center p-2 border-b border-gray-100">
+                      <Checkbox value={isChecked} onValueChange={() => handleToggleChecked(listing.id)} disabled={status !== 'available'} />
+                      <Image source={{uri: `https://creative-blini-b15912.netlify.app/assets/${listing.gear_images?.[0]?.directus_files_id?.id}`}} className="w-12 h-12 rounded-md mx-3" />
+                      <Text className="flex-1 font-semibold">{listing.title}</Text>
+                      {status === 'checking' && <ActivityIndicator size="small" />}
+                      {status === 'available' && <View className="px-2 py-1 rounded-full bg-green-100"><Text className="text-green-800 text-xs">Available</Text></View>}
+                      {status === 'unavailable' && <View className="px-2 py-1 rounded-full bg-red-100"><Text className="text-red-800 text-xs">Unavailable</Text></View>}
+                    </View>
+                  )
+                })}
+              </ScrollView>
+
+              {/* Action Buttons */}
+              <View className="mt-4 flex-row gap-4">
+                <TouchableOpacity onPress={() => setIsModalVisible(false)} className="flex-1 p-3 rounded-lg bg-gray-200">
+                  <Text className="text-center font-bold">Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleCreateBundle} disabled={bundleCreationLoading || checkedItems.size === 0} className="flex-1 p-3 rounded-lg bg-blue-600 disabled:bg-gray-400">
+                  <Text className="text-white text-center font-bold">
+                    {bundleCreationLoading ? 'Creating...' : `Add ${checkedItems.size} Items`}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+        
+        {/* More from this owner */}
+        {otherListings.length > 0 && (
+          <View className="mt-8">
+            <Text className="text-xl font-bold mb-4 text-gray-800">More from {gear.owner.first_name}</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16 }}>
+              {otherListings.map((listing) => (
+                <TouchableOpacity key={listing.id} onPress={() => router.push(`/gear/${listing.id}`)} className="mr-4">
+                  <View className="w-48">
+                    <Image
+                      source={{ uri: `https://creative-blini-b15912.netlify.app/assets/${listing.gear_images?.[0]?.directus_files_id?.id}?width=200&height=150&fit=cover` }}
+                      className="w-full h-32 rounded-lg bg-gray-200"
+                    />
+                    <Text className="mt-2 font-semibold text-gray-700" numberOfLines={1}>{listing.title}</Text>
+                    <Text className="text-green-600 font-bold">${listing.price}/day</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
       </View>
     </ScrollView>
   )

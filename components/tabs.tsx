@@ -87,7 +87,16 @@ export default function TabLayout() {
         name="gear"
         options={{
           title: 'Browse',
+          
           tabBarIcon: ({ color, size }) => <Ionicons name="search-outline" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="cart"
+        options={{
+          title: 'Cart',
+          href: user?'/cart':null,
+          tabBarIcon: ({ color, size }) => <Ionicons name="cart-outline" size={size} color={color} />,
         }}
       />
       <Tabs.Screen

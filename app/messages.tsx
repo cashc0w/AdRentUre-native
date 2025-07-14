@@ -231,7 +231,12 @@ const Messages = () => {
               ) : (
                 conversations.map((conversation) => {
                   const otherUser = getOtherUser(conversation);
-
+                  const gearItems = conversation.rental_request?.bundle?.gear_listings
+                    ?.map(item => (item as any).gear_listings_id?.title)
+                    .filter(Boolean);
+                  const bundleTitle = gearItems && gearItems.length > 0
+                    ? `Bundle: ${gearItems.join(', ')}`
+                    : 'No items in bundle';
 
                   return (
                     <TouchableOpacity
@@ -253,7 +258,7 @@ const Messages = () => {
                         )}
                       </View>
                       <Text className={`text-sm truncate ${notificationCountMap.get(conversation.id) > 0 ? 'text-green-500' : 'text-gray-600'}`}>
-                        {conversation.rental_request.gear_listing ? conversation.rental_request.gear_listing.title : 'No gear listing'}
+                        {bundleTitle}
                       </Text>
                     </TouchableOpacity>
                   );
@@ -274,10 +279,13 @@ const Messages = () => {
                     ? `${getOtherUser(selectedConversation)?.first_name} ${getOtherUser(selectedConversation)?.last_name}`
                     : 'Unknown User'}
                 </Text>
-                <Text className='text-sm text-gray-600'>
-                  {selectedConversation.rental_request.gear_listing
-                    ? `About: ${selectedConversation.rental_request.gear_listing.title}`
-                    : 'No gear listing'}
+                <Text className='text-sm text-gray-600' numberOfLines={1}>
+                  {`About: ${
+                    selectedConversation.rental_request?.bundle?.gear_listings
+                      ?.map(item => (item as any).gear_listings_id?.title)
+                      .filter(Boolean)
+                      .join(', ') || 'No items in bundle'
+                  }`}
                 </Text>
               </View>
 
