@@ -22,8 +22,8 @@ export default function GearDetail() {
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
   const [mapboxInitialized, setMapboxInitialized] = useState(false)
 
-  const [startDate, setStartDate] = useState<Date | null>(null)
-  const [endDate, setEndDate] = useState<Date | null>(null)
+  const [startDate, setStartDate] = useState<Date | null>(params.startDate ? new Date(params.startDate as string) : null)
+  const [endDate, setEndDate] = useState<Date | null>(params.endDate ? new Date(params.endDate as string) : null)
   const [message, setMessage] = useState('')
   const [listing, setListing] = useState<DirectusGearListing | null>(null)
   const [error, setError] = useState<Error | null>(null)
@@ -34,8 +34,8 @@ export default function GearDetail() {
   
   // State for the modal
   const [isModalVisible, setIsModalVisible] = useState(false);
-  const [modalStartDate, setModalStartDate] = useState<Date>(new Date());
-  const [modalEndDate, setModalEndDate] = useState<Date | null>(null);
+  const [modalStartDate, setModalStartDate] = useState<Date>(params.startDate ? new Date(params.startDate as string) : new Date());
+  const [modalEndDate, setModalEndDate] = useState<Date | null>(params.endDate ? new Date(params.endDate as string) : null);
   const [availabilityMap, setAvailabilityMap] = useState<Record<string, 'available' | 'unavailable' | 'checking'>>({});
   const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set());
   const [bundleCreationLoading, setBundleCreationLoading] = useState(false);
@@ -151,6 +151,13 @@ export default function GearDetail() {
   useEffect(() => {
     fetchAllData();
   }, [id]);
+
+  useEffect(() => {
+    if (params.startDate && params.endDate) {
+      handleDateCheck(new Date(params.startDate as string), new Date(params.endDate as string));
+    }
+  }, [params.startDate, params.endDate, allOwnerListings.length]);
+
 
   // Clear availability error when dates change
   useEffect(() => {
@@ -490,11 +497,28 @@ export default function GearDetail() {
               <View className="flex-row gap-4 mb-4">
                 <View className="flex-1">
                   <Text className="font-semibold mb-1">Start Date</Text>
-                  <DateTimePicker value={modalStartDate} onChange={(e,d) => d && handleDateCheck(d, modalEndDate)} />
+                  {Platform.OS === 'web' ? (
+                    <WebDateInput
+                      value={modalStartDate}
+                      onChange={(date) => date && handleDateCheck(date, modalEndDate)}
+                      placeholder="Start Date"
+                    />
+                  ) : (
+                    <DateTimePicker value={modalStartDate} onChange={(e,d) => d && handleDateCheck(d, modalEndDate)} />
+                  )}
                 </View>
                 <View className="flex-1">
                   <Text className="font-semibold mb-1">End Date</Text>
-                  <DateTimePicker value={modalEndDate || modalStartDate} onChange={(e,d) => d && handleDateCheck(modalStartDate, d)} minimumDate={modalStartDate} />
+                  {Platform.OS === 'web' ? (
+                    <WebDateInput
+                      value={modalEndDate}
+                      onChange={(date) => date && handleDateCheck(modalStartDate, date)}
+                      placeholder="End Date"
+                      disabled={!modalStartDate}
+                    />
+                  ) : (
+                    <DateTimePicker value={modalEndDate || modalStartDate} onChange={(e,d) => d && handleDateCheck(modalStartDate, d)} minimumDate={modalStartDate} />
+                  )}
                 </View>
               </View>
 

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { getGearListings, directus, type DirectusGearListing, type DirectusUser } from "../lib/directus";
-import { readMe } from "@directus/sdk";
+import { getGearListings, directus, type DirectusGearListing, type DirectusUser, checkAvailability } from "../lib/directus";
+import { readItems } from "@directus/sdk";
 import { useAuth } from "../contexts/AuthContext";
 
 export type SortOption =
@@ -17,6 +17,8 @@ interface UseGearListingsOptions {
     maxPrice?: number;
     owner?: string;
     search?: string;
+    startDate?: Date | null;
+    endDate?: Date | null;
   };
   page?: number;
   itemsPerPage?: number;
@@ -75,9 +77,19 @@ export function useGearListings({
           );
         }
 
-        setListings(response);
-        setTotalItems(response.length);
-        setTotalPages(Math.ceil(response.length / itemsPerPage));
+        if (filters?.startDate && filters?.endDate) {
+          const availabilityChecks = await Promise.all(
+            filteredListings.map(l => 
+              checkAvailability(l.id, filters.startDate!.toISOString(), filters.endDate!.toISOString())
+            )
+          );
+          filteredListings = filteredListings.filter((_, index) => availabilityChecks[index]);
+        }
+
+
+        setListings(filteredListings);
+        setTotalItems(filteredListings.length);
+        setTotalPages(Math.ceil(filteredListings.length / itemsPerPage));
       } catch (err) {
         setError(err as Error);
       } finally {

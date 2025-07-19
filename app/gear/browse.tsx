@@ -1,10 +1,11 @@
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, ScrollView, Image, ActivityIndicator, Pressable, RefreshControl } from 'react-native'
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, ScrollView, Image, ActivityIndicator, Pressable, RefreshControl, Platform } from 'react-native'
 import React, { useEffect, useState } from 'react'
 import "../../globals.css";
 import { useGearListings, type SortOption } from '../../hooks/useGearListings';
 import { useAuth } from '../../contexts/AuthContext';
 import { getAssetURL } from '../../lib/directus';
 import { useRouter } from 'expo-router';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 const categories = [
   'Camping',
@@ -25,6 +26,37 @@ const sortOptions = [
   { value: 'price_desc', label: 'Price: High to Low' },
 ]
 
+const WebDateInput = ({ value, onChange, placeholder, disabled = false, min }: {
+  value: Date | null;
+  onChange: (date: Date | null) => void;
+  placeholder: string;
+  disabled?: boolean;
+  min?: string;
+}) => {
+  if (Platform.OS !== 'web') return null;
+  
+  return (
+    <input
+      type="date"
+      value={value ? value.toISOString().split('T')[0] : ''}
+      onChange={(e) => {
+        const date = e.target.value ? new Date(e.target.value) : null;
+        onChange(date);
+      }}
+      disabled={disabled}
+      min={min}
+      style={{
+        width: '100%',
+        padding: '8px 12px',
+        border: '1px solid #D1D5DB',
+        borderRadius: '6px',
+        backgroundColor: 'white',
+        fontSize: '16px',
+      }}
+    />
+  );
+};
+
 export default function Browse() {
   
   const [searchInput, setSearchInput] = useState('')
@@ -34,7 +66,9 @@ export default function Browse() {
     minPrice: undefined as number | undefined,
     maxPrice: undefined as number | undefined,
     maxDistance: undefined as number | undefined,
-    search: ''
+    search: '',
+    startDate: null as Date | null,
+    endDate: null as Date | null,
   })
   const [filters, setFilters] = useState({
     category: '',
@@ -42,7 +76,9 @@ export default function Browse() {
     minPrice: undefined as number | undefined,
     maxPrice: undefined as number | undefined,
     maxDistance: undefined as number | undefined,
-    search: ''
+    search: '',
+    startDate: null as Date | null,
+    endDate: null as Date | null,
   })
   const [currentPage, setCurrentPage] = useState(1)
   const [sort, setSort] = useState<SortOption>('date_created_desc')
@@ -60,7 +96,7 @@ export default function Browse() {
 
 
 
-  const handleTempFilterChange = (key: string, value: string | number) => {
+  const handleTempFilterChange = (key: string, value: string | number | Date | null) => {
     setTempFilters(prev => ({
       ...prev,
       [key]: value === '' ? undefined : value
@@ -90,7 +126,9 @@ export default function Browse() {
       minPrice: undefined,
       maxPrice: undefined,
       maxDistance: undefined,
-      search: ''
+      search: '',
+      startDate: null,
+      endDate: null,
     }
     setTempFilters(clearedFilters)
     setFilters(clearedFilters)
@@ -259,6 +297,45 @@ export default function Browse() {
           />
         </View>
 
+        {/* Availability Date Filter */}
+        <View className="mb-4">
+          <Text className="text-sm font-medium text-gray-700 mb-2">Availability</Text>
+          <View className="flex-row gap-2">
+            <View className="flex-1">
+              {Platform.OS === 'web' ? (
+                <WebDateInput
+                  placeholder="Start Date"
+                  value={tempFilters.startDate}
+                  onChange={(date) => handleTempFilterChange('startDate', date)}
+                />
+              ) : (
+                <DateTimePicker
+                  value={tempFilters.startDate || new Date()}
+                  onChange={(e, date) => handleTempFilterChange('startDate', date || null)}
+                />
+              )}
+            </View>
+            <View className="flex-1">
+             {Platform.OS === 'web' ? (
+                <WebDateInput
+                  placeholder="End Date"
+                  value={tempFilters.endDate}
+                  onChange={(date) => handleTempFilterChange('endDate', date)}
+                  disabled={!tempFilters.startDate}
+                  min={tempFilters.startDate?.toISOString().split('T')[0]}
+                />
+              ) : (
+                <DateTimePicker
+                  value={tempFilters.endDate || tempFilters.startDate || new Date()}
+                  onChange={(e, date) => handleTempFilterChange('endDate', date || null)}
+                  minimumDate={tempFilters.startDate || new Date()}
+                  disabled={!tempFilters.startDate}
+                />
+              )}
+            </View>
+          </View>
+        </View>
+
         
 
         {/* Submit Filters Button */}
@@ -297,7 +374,13 @@ export default function Browse() {
             {listings.map((listing) => (
               <Pressable
                 key={listing.id}
-                onPress={() => router.push(`/gear/${listing.id}`)}
+                onPress={() => router.push({
+                  pathname: `/gear/${listing.id}`,
+                  params: {
+                    startDate: filters.startDate?.toISOString(),
+                    endDate: filters.endDate?.toISOString()
+                  }
+                })}
                 className="w-[48%] rounded-xl overflow-hidden shadow-sm bg-white"
               >
                 {listing.gear_images && listing.gear_images.length > 0 ? (
