@@ -1,17 +1,45 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import type { DirectusMessage } from "../lib/directus";
-import { getConversationMessages, sendMessage as sendDirectusMessage } from "../lib/directus";
+import { getConversation, getConversationMessages, sendMessage as sendDirectusMessage } from "../lib/directus";
 import { useGlobalMessages } from "../hooks/useGlobalMessages";
 
-export function useConversationMessages(conversationId: string, currentUserId: string) {
+async function getOtherParticipant(conversationId: string, currentClientId: string): Promise<string> {
+  const conversation = await getConversation(conversationId);
+  return conversation.user_1.id === currentClientId
+      ? conversation.user_2.id
+      : conversation.user_1.id;
+}
+
+export function useConversationMessages(conversationId: string, currentClientId: string) {
   const [messages, setMessages] = useState<DirectusMessage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [sending, setSending] = useState(false);
+  const [otherParticipantId, setOtherParticipantId] = useState<string | null>(null);
   
-  const { sendMessage: sendGlobalMessage, onMessageReceived, isConnected } = useGlobalMessages();
+  const { sendMessage: sendGlobalMessage, onMessageReceived, isConnected } = useGlobalMessages(currentClientId);
   const sentMessagesRef = useRef<Set<string>>(new Set());
   const currentConversationIdRef = useRef<string>('');
+
+  // Load other participant when conversation changes
+  useEffect(() => {
+    if (!conversationId || !currentClientId) {
+      setOtherParticipantId(null);
+      return;
+    }
+
+    async function loadOtherParticipant() {
+      try {
+        const participantId = await getOtherParticipant(conversationId, currentClientId);
+        setOtherParticipantId(participantId);
+      } catch (err) {
+        console.error("Error loading other participant:", err);
+        setError(err instanceof Error ? err : new Error("Failed to load conversation participant"));
+      }
+    }
+
+    loadOtherParticipant();
+  }, [conversationId, currentClientId]);
 
   // Combined effect to handle conversation changes and message loading
   useEffect(() => {
@@ -92,8 +120,12 @@ export function useConversationMessages(conversationId: string, currentUserId: s
 
   // Send message function
   const sendMessage = useCallback(async (messageText: string) => {
-    if (!conversationId || !currentUserId) {
+    if (!conversationId || !currentClientId) {
       throw new Error("Missing conversation or user ID");
+    }
+
+    if (!otherParticipantId) {
+      throw new Error("Other participant not found");
     }
 
     if (!messageText.trim()) {
@@ -102,10 +134,15 @@ export function useConversationMessages(conversationId: string, currentUserId: s
 
     setSending(true);
     setError(null);
-
+    console.log("all consiitons met, sending message:", messageText, "to conversation:", conversationId);
     try {
-      // Send via global real-time connection
-      const ablyMessage = await sendGlobalMessage(conversationId, messageText, currentUserId);
+      // Send via global real-time connection to the other participant
+      const ablyMessage = await sendGlobalMessage(
+        conversationId, 
+        messageText, 
+        currentClientId, 
+        otherParticipantId
+      );
       
       // Only add optimistic message if this is still the current conversation
       if (currentConversationIdRef.current === conversationId) {
@@ -139,7 +176,7 @@ export function useConversationMessages(conversationId: string, currentUserId: s
       // Also persist to Directus
       await sendDirectusMessage({
         conversation: conversationId,
-        sender: currentUserId,
+        sender: currentClientId,
         message: messageText.trim(),
       });
 
@@ -151,7 +188,7 @@ export function useConversationMessages(conversationId: string, currentUserId: s
     } finally {
       setSending(false);
     }
-  }, [conversationId, currentUserId, sendGlobalMessage]);
+  }, [conversationId, currentClientId, otherParticipantId, sendGlobalMessage]);
 
   return {
     messages,

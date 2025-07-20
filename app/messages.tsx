@@ -42,7 +42,7 @@ const Messages = () => {
   const conversationIds = conversations.map(conv => conv.id);
 
   // Initialize global messages connection
-  const { onMessageReceived, isConnected: globalConnected, error: globalError } = useGlobalMessages(conversationIds);
+  const { onMessageReceived, isConnected: globalConnected, error: globalError } = useGlobalMessages(currentClientId);
 
   // Get messages for the selected conversation
   const {

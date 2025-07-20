@@ -125,15 +125,16 @@ export interface AblyMessage {
   id: string;
   conversationId: string;
   senderId: string;
+  receiverId: string;
   message: string;
   timestamp: string;
 }
 
-export function getChannelInstance(channelId: string) {
+export function getClientChannelInstance(clientId: string) {
   try {
     const ably = getAblyInstance();
-    const channelName = `private-chat:${channelId}`;
-    console.log(`Creating channel instance for: ${channelName}`);
+    const channelName = `client:${clientId}`;
+    console.log(`Creating client channel instance for: ${channelName}`);
     
     const channel = ably.channels.get(channelName, {
       modes: ["subscribe", "publish"],
@@ -161,19 +162,18 @@ export function getChannelInstance(channelId: string) {
 
     return channel;
   } catch (err) {
-    console.error("Error getting channel instance:", err);
+    console.error("Error getting client channel instance:", err);
     throw err;
   }
 }
 
-export async function publishMessage(channelId: string, message: AblyMessage) {
-  if (message.conversationId !== channelId) {
-    throw new Error("Message conversation ID does not match channel ID");
-  }
-
+export async function publishMessageToClient(
+  receiverClientId: string, 
+  message: AblyMessage
+) {
   try {
     await ensureConnected(15000);
-    const channel = getChannelInstance(channelId);
+    const channel = getClientChannelInstance(receiverClientId);
 
     return new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -184,7 +184,7 @@ export async function publishMessage(channelId: string, message: AblyMessage) {
         try {
           channel.publish("message", message);
           clearTimeout(timer);
-          console.log("Message published successfully to channel:", channelId);
+          console.log("Message published successfully to client:", receiverClientId);
           resolve();
         } catch (error) {
           clearTimeout(timer);
@@ -201,18 +201,18 @@ export async function publishMessage(channelId: string, message: AblyMessage) {
       }
     });
   } catch (err) {
-    console.error("Error in publishMessage:", err);
+    console.error("Error in publishMessageToClient:", err);
     throw err;
   }
 }
 
-export function subscribeToMessages(
-  channelId: string,
+export function subscribeToClientMessages(
+  clientId: string,
   callback: (message: AblyMessage) => void
 ): Promise<() => void> {
   try {
-    const channel = getChannelInstance(channelId);
-    console.log(`Subscribing to messages on channel ${channelId}`);
+    const channel = getClientChannelInstance(clientId);
+    console.log(`Subscribing to messages for client ${clientId}`);
 
     return new Promise<() => void>((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -223,22 +223,15 @@ export function subscribeToMessages(
         clearTimeout(timer);
         const messageHandler = (message: Ably.Message) => {
           const messageData = message.data as AblyMessage;
-          if (messageData.conversationId !== channelId) {
-            console.warn("Received message for wrong conversation, ignoring:", {
-              expected: channelId,
-              received: messageData.conversationId,
-            });
-            return;
-          }
-
-          console.log(`Received message on channel ${channelId}:`, message);
+          
+          console.log(`Received message for client ${clientId}:`, message);
           callback(messageData);
         };
 
         channel.subscribe("message", messageHandler);
 
         resolve(() => {
-          console.log(`Unsubscribing from channel ${channelId}`);
+          console.log(`Unsubscribing from client channel ${clientId}`);
           channel.unsubscribe("message", messageHandler);
           channel.detach();
         });
@@ -252,7 +245,7 @@ export function subscribeToMessages(
       }
     });
   } catch (err) {
-    console.error("Error in subscribeToMessages:", err);
+    console.error("Error in subscribeToClientMessages:", err);
     throw err;
   }
 }

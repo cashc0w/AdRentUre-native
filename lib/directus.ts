@@ -24,7 +24,7 @@ import {
 import { read } from "fs";
 import { get } from "http";
 import { geocode, Location } from "./mapbox";
-import { publishMessage } from "./ably";
+import { publishMessageToClient } from "./ably";
 import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import * as Crypto from 'expo-crypto';
@@ -1316,7 +1316,6 @@ export const updateRentalRequestStatus = async (
   token?: string
 ) => {
   try {
-    const correspondingConversation = await getConversationByRentalRequest(requestId);
 
     // For "approved" and "rejected", no token is needed as it's a manual owner action.
     if (status === "approved" || status === "rejected") {
@@ -1326,21 +1325,7 @@ export const updateRentalRequestStatus = async (
         })
       );
       // Notification logic for approval/rejection
-      try {
-        if (correspondingConversation) {
-
-          await sendMessage({
-            conversation: correspondingConversation.id,
-            sender: correspondingConversation.user_2.id,
-            message: `This rental request has been marked as ${status}.`,
-          });
-          console.log('Message sent in conversation:', correspondingConversation.id);
-        } else {
-          console.warn('No conversation found for rental request:', requestId);
-        }
-      } catch (error) {
-        console.error("Error sending notification after status update:", error);
-      }
+      
       return response as DirectusRentalRequest;
     }
 
@@ -1386,22 +1371,6 @@ export const updateRentalRequestStatus = async (
       })
     );
     console.log('Status update response:', response);
-
-    // 5. Send message to the other party
-    try {
-      if (correspondingConversation) {
-        await sendMessage({
-          conversation: correspondingConversation.id,
-          sender: scannerClient.id,
-          message: `This rental request has been marked as ${status}.`,
-        });
-        console.log('Message sent in conversation:', correspondingConversation.id);
-      } else {
-        console.warn('No conversation found for rental request:', requestId);
-      }
-    } catch (error) {
-      console.error("Error sending notification after status update:", error);
-    }
 
     return response as DirectusRentalRequest;
   } catch (error) {
@@ -1575,6 +1544,7 @@ export const sendMessage = async (data: {
       await createAndPublishNotification({
         client: recipientId,
         conversation: currentConversation.id,
+        recipient: recipientId
       });
     } catch (error) {
       console.error("Error sending notification:", error);
@@ -1755,8 +1725,8 @@ export const markNotificationAsRead = async (
 // function to create and publish notifications
 export const createAndPublishNotification = async (data: {
   client: string;
-  conversation?: string | null;
-  request?: string | null;
+  conversation: string ;
+  recipient: string;
 }) => {
   try {
     // Create the notification in Directus
@@ -1764,19 +1734,20 @@ export const createAndPublishNotification = async (data: {
       createItem("notifications", {
         client: data.client,
         conversation: data.conversation || null,
-        request: data.request || null,
+        request: null,
         read: false,
       })
     );
 
-    // Publish to Ably channel for real-time updates
-    await publishMessage(`private-chat:notifications:${data.client}`, {
-      id: await Crypto.randomUUID(),
-      conversationId: `private-chat:notifications:${data.client}`,
-      senderId: "system",
-      message: "new_notification",
-      timestamp: new Date().toISOString(),
-    });
+    // // Publish to Ably channel for real-time updates
+    // await publishMessageToClient(data.recipient, {
+    //   id: await Crypto.randomUUID(),
+    //   conversationId: data.conversation,
+    //   senderId: "system",
+    //   receiverId: data.recipient,
+    //   message: "new_message",
+    //   timestamp: new Date().toISOString(),
+    // });
 
     return response;
   } catch (error) {

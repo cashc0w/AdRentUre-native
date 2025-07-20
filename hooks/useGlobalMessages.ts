@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import type { DirectusMessage } from "../lib/directus";
 import {
-  subscribeToMessages,
-  publishMessage,
+  subscribeToClientMessages,
+  publishMessageToClient,
   AblyMessage,
   getAblyInstance,
 } from "../lib/ably";
@@ -10,15 +10,15 @@ import {
 // Global state to manage Ably connection across the app
 let globalAblyConnection: {
   isConnected: boolean;
-  subscriptions: Map<string, Set<(message: DirectusMessage) => void>>;
-  unsubscribeFunctions: Map<string, () => void>;
+  currentClientSubscription: string | null;
+  unsubscribeFunction: (() => void) | null;
 } = {
   isConnected: false,
-  subscriptions: new Map(),
-  unsubscribeFunctions: new Map(),
+  currentClientSubscription: null,
+  unsubscribeFunction: null,
 };
 
-export function useGlobalMessages(userConversationIds: string[] = []) {
+export function useGlobalMessages(currentUserId: string) {
   const [error, setError] = useState<Error | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const messageCallbacksRef = useRef<Set<(message: DirectusMessage, conversationId: string) => void>>(new Set());
@@ -45,48 +45,48 @@ export function useGlobalMessages(userConversationIds: string[] = []) {
     []
   );
 
-  // Subscribe to a specific conversation
-  const subscribeToConversation = useCallback(async (conversationId: string) => {
-    if (globalAblyConnection.unsubscribeFunctions.has(conversationId)) {
-      return; // Already subscribed
+  // Subscribe to the current user's client channel
+  const subscribeToUserChannel = useCallback(async (userId: string) => {
+    // If already subscribed to this user, return
+    if (globalAblyConnection.currentClientSubscription === userId) {
+      return;
+    }
+
+    // Unsubscribe from previous subscription if exists
+    if (globalAblyConnection.unsubscribeFunction) {
+      console.log(`Unsubscribing from previous client: ${globalAblyConnection.currentClientSubscription}`);
+      globalAblyConnection.unsubscribeFunction();
+      globalAblyConnection.unsubscribeFunction = null;
+      globalAblyConnection.currentClientSubscription = null;
     }
 
     try {
-      console.log(`Subscribing to conversation: ${conversationId}`);
+      console.log(`Subscribing to user channel: ${userId}`);
       
-      const unsubscribe = await subscribeToMessages(
-        conversationId,
+      const unsubscribe = await subscribeToClientMessages(
+        userId,
         (ablyMessage: AblyMessage) => {
-          console.log("Global message received:", ablyMessage);
+          console.log("Global message received for user:", userId, ablyMessage);
           
           const directusMessage = convertAblyToDirectusMessage(ablyMessage);
           
           // Notify all registered callbacks
           messageCallbacksRef.current.forEach(callback => {
-            callback(directusMessage, conversationId);
+            callback(directusMessage, ablyMessage.conversationId);
           });
         }
       );
 
-      globalAblyConnection.unsubscribeFunctions.set(conversationId, unsubscribe);
-      console.log(`Successfully subscribed to conversation: ${conversationId}`);
+      globalAblyConnection.unsubscribeFunction = unsubscribe;
+      globalAblyConnection.currentClientSubscription = userId;
+      console.log(`Successfully subscribed to user channel: ${userId}`);
     } catch (err) {
-      console.error(`Error subscribing to conversation ${conversationId}:`, err);
-      setError(err instanceof Error ? err : new Error("Failed to subscribe to conversation"));
+      console.error(`Error subscribing to user channel ${userId}:`, err);
+      setError(err instanceof Error ? err : new Error("Failed to subscribe to user channel"));
     }
   }, [convertAblyToDirectusMessage]);
 
-  // Unsubscribe from a specific conversation
-  const unsubscribeFromConversation = useCallback((conversationId: string) => {
-    const unsubscribe = globalAblyConnection.unsubscribeFunctions.get(conversationId);
-    if (unsubscribe) {
-      console.log(`Unsubscribing from conversation: ${conversationId}`);
-      unsubscribe();
-      globalAblyConnection.unsubscribeFunctions.delete(conversationId);
-    }
-  }, []);
-
-  // Initialize global connection
+  // Initialize global connection and subscribe to user channel
   const initializeGlobalConnection = useCallback(async () => {
     try {
       const ably = getAblyInstance();
@@ -103,53 +103,37 @@ export function useGlobalMessages(userConversationIds: string[] = []) {
         } else {
           setError(null);
         }
+
+        // If connected and we have a user ID, ensure we're subscribed
+        if (connected && currentUserId) {
+          subscribeToUserChannel(currentUserId);
+        }
       };
 
       ably.connection.on(handleConnectionStateChange);
       
       // Set initial connection state
-      setIsConnected(ably.connection.state === "connected");
-      globalAblyConnection.isConnected = ably.connection.state === "connected";
+      const initialConnected = ably.connection.state === "connected";
+      setIsConnected(initialConnected);
+      globalAblyConnection.isConnected = initialConnected;
+
+      // If already connected and we have a user ID, subscribe immediately
+      if (initialConnected && currentUserId) {
+        await subscribeToUserChannel(currentUserId);
+      }
 
     } catch (err) {
       console.error("Error initializing global Ably connection:", err);
       setError(err instanceof Error ? err : new Error("Failed to initialize connection"));
     }
-  }, []);
+  }, [currentUserId, subscribeToUserChannel]);
 
-  // Subscribe to all user conversations
+  // Initialize connection and subscribe when user ID changes
   useEffect(() => {
-    if (userConversationIds.length === 0) return;
+    if (!currentUserId) return;
 
-    // Initialize connection if not already done
-    if (!globalAblyConnection.isConnected) {
-      initializeGlobalConnection();
-    }
-
-    // Get current subscriptions
-    const currentSubscriptions = new Set(globalAblyConnection.unsubscribeFunctions.keys());
-    const newConversations = new Set(userConversationIds);
-
-    // Unsubscribe from conversations that are no longer in the list
-    currentSubscriptions.forEach(conversationId => {
-      if (!newConversations.has(conversationId)) {
-        unsubscribeFromConversation(conversationId);
-      }
-    });
-
-    // Subscribe to new conversations
-    newConversations.forEach(conversationId => {
-      if (!currentSubscriptions.has(conversationId)) {
-        subscribeToConversation(conversationId);
-      }
-    });
-
-  }, [userConversationIds, initializeGlobalConnection, subscribeToConversation, unsubscribeFromConversation]);
-
-  // Initialize connection on mount
-  useEffect(() => {
     initializeGlobalConnection();
-  }, [initializeGlobalConnection]);
+  }, [currentUserId, initializeGlobalConnection]);
 
   // Register a callback for receiving messages
   const onMessageReceived = useCallback((callback: (message: DirectusMessage, conversationId: string) => void) => {
@@ -160,9 +144,9 @@ export function useGlobalMessages(userConversationIds: string[] = []) {
     };
   }, []);
 
-  // Send message function
+  // Send message function - publishes to the receiver's channel
   const sendMessage = useCallback(
-    async (conversationId: string, message: string, senderId: string) => {
+    async (conversationId: string, message: string, senderId: string, receiverId: string) => {
       if (!message.trim()) {
         throw new Error("Message cannot be empty");
       }
@@ -175,16 +159,22 @@ export function useGlobalMessages(userConversationIds: string[] = []) {
         throw new Error("Not connected to real-time service");
       }
 
+      if (!receiverId) {
+        throw new Error("Receiver ID is required");
+      }
+
       try {
         const ablyMessage: AblyMessage = {
           id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           conversationId,
           senderId,
+          receiverId,
           message: message.trim(),
           timestamp: new Date().toISOString(),
         };
 
-        await publishMessage(conversationId, ablyMessage);
+        // Publish to the receiver's channel
+        await publishMessageToClient(`client:${receiverId}`, ablyMessage);
         return ablyMessage;
       } catch (err) {
         console.error("Error sending message:", err);
