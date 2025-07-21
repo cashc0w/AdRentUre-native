@@ -6,12 +6,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { View, Text, Alert } from 'react-native';
 import { useState, useEffect } from 'react';
 import { getMessageNotifications } from '../lib/directus'; // Adjust the import path
+import { useGlobalMessages } from '../hooks/useGlobalMessages';
 
 // Custom component for the mail icon with badge
 const MailIconWithBadge = ({ color, size }: { color: string; size: number }) => {
   const { user } = useAuth();
   const { client } = useClientWithUserID(user?.id || "");
   const [messageNotificationCount, setMessageNotificationCount] = useState(0);
+
+  // Initialize global messages connection
+    const { onMessageReceived, isConnected: globalConnected, error: globalError } = useGlobalMessages(client?.id || "");
 
   useEffect(() => {
     if (user && client) {

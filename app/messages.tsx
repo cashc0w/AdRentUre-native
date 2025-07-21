@@ -152,14 +152,7 @@ const Messages = () => {
     return unsubscribe;
   }, [onMessageReceived, currentClientId]);
 
-  // USELESS // Auto-select first conversation
-  // useEffect(() => {
-  //   if (conversations.length > 0 && !selectedConversation) {
-  //     setSelectedConversation(conversations[0]);
-  //   }
-  // }, [conversations, selectedConversation]);
-
-  // Handle sending a new message
+  
   const handleSendMessage = async () => {
     if (!newMessage.trim() || !selectedConversation) return;
 

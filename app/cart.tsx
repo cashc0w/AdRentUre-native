@@ -5,8 +5,16 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { createRentalRequest, getCurrentClient } from '../lib/directus';
 import { useRentalRequest } from '../hooks/useCreateRentalRequest';
 import { DirectusBundle } from '../lib/directus';
+import { useGlobalMessages } from '../hooks/useGlobalMessages';
+import { useClientWithUserID } from '../hooks/useClientWithUserID';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function CartPage() {
+    const { user } = useAuth();
+    const { client } = useClientWithUserID(user?.id || "");
+    // In your main app component or a parent component
+    const { isConnected: globalConnected } = useGlobalMessages(client?.id || "");
+
     const { bundles, loading, error, removeFromBundle, refetch } = useBundles();
     const router = useRouter();
     const [removingItemId, setRemovingItemId] = useState<string | null>(null);
@@ -24,9 +32,9 @@ export default function CartPage() {
 
     // useFocusEffect will run the refetch function every time the screen comes into focus.
     useFocusEffect(
-      useCallback(() => {
-        refetch();
-      }, [])
+        useCallback(() => {
+            refetch();
+        }, [])
     );
 
     const formatDate = (dateString?: string) => {
@@ -118,7 +126,7 @@ export default function CartPage() {
                         <Text className="text-lg font-semibold text-gray-800 mb-1">
                             Items from: {bundle.owner?.first_name || '...'} {bundle.owner?.last_name || '...'}
                         </Text>
-                        
+
                         {bundle.start_date && bundle.end_date && (
                             <View className="flex-row items-center bg-gray-100 p-2 rounded-md mb-3">
                                 <Text className="text-gray-600 font-medium">📅 Dates: </Text>
@@ -134,9 +142,9 @@ export default function CartPage() {
                             const isRemoving = removingItemId === gear.id;
                             return (
                                 <View key={gear.id} className="flex-row items-center mb-4 border-b border-gray-100 pb-4">
-                                    <TouchableOpacity 
-                                      onPress={() => router.push(`/gear/${gear.id}`)}
-                                      className="flex-row items-center flex-1"
+                                    <TouchableOpacity
+                                        onPress={() => router.push(`/gear/${gear.id}`)}
+                                        className="flex-row items-center flex-1"
                                     >
                                         <Image
                                             source={{ uri: getImageUrl(gear) }}
@@ -147,7 +155,7 @@ export default function CartPage() {
                                             <Text className="text-green-600 font-bold mt-1">${gear.price}/day</Text>
                                         </View>
                                     </TouchableOpacity>
-                                    <TouchableOpacity 
+                                    <TouchableOpacity
                                         onPress={() => handleRemove(bundle.id, gear.id)}
                                         disabled={isRemoving}
                                         className="p-2 ml-2"

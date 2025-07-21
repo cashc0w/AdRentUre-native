@@ -30,7 +30,25 @@ export function useConversationMessages(conversationId: string, currentClientId:
 
     async function loadOtherParticipant() {
       try {
-        const participantId = await getOtherParticipant(conversationId, currentClientId);
+        // Add retry logic for getting other participant
+        let retries = 3;
+        let participantId: string | null = null;
+        
+        while (retries > 0 && !participantId) {
+          try {
+            participantId = await getOtherParticipant(conversationId, currentClientId);
+            break;
+          } catch (err) {
+            retries--;
+            if (retries > 0) {
+              console.log(`Failed to get other participant, retrying... (${retries} attempts left)`);
+              await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second before retry
+            } else {
+              throw err;
+            }
+          }
+        }
+        
         setOtherParticipantId(participantId);
       } catch (err) {
         console.error("Error loading other participant:", err);
@@ -118,23 +136,37 @@ export function useConversationMessages(conversationId: string, currentClientId:
     return unsubscribe;
   }, [conversationId, onMessageReceived]);
 
-  // Send message function
+  // Send message function with memoization to prevent unnecessary re-renders
   const sendMessage = useCallback(async (messageText: string) => {
     if (!conversationId || !currentClientId) {
       throw new Error("Missing conversation or user ID");
-    }
-
-    if (!otherParticipantId) {
-      throw new Error("Other participant not found");
     }
 
     if (!messageText.trim()) {
       throw new Error("Message cannot be empty");
     }
 
+    // Wait for other participant to be loaded if not available yet
+    if (!otherParticipantId) {
+      console.log("Waiting for other participant to be loaded...");
+      // Wait up to 5 seconds for other participant to be loaded
+      let attempts = 0;
+      const maxAttempts = 10;
+      
+      while (!otherParticipantId && attempts < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        attempts++;
+      }
+      
+      if (!otherParticipantId) {
+        throw new Error("Other participant not found after waiting");
+      }
+    }
+
     setSending(true);
     setError(null);
-    console.log("all consiitons met, sending message:", messageText, "to conversation:", conversationId);
+    console.log("all conditions met, sending message:", messageText, "to conversation:", conversationId);
+    
     try {
       // Send via global real-time connection to the other participant
       const ablyMessage = await sendGlobalMessage(
