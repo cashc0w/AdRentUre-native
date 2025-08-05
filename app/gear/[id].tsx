@@ -39,6 +39,7 @@ export default function GearDetail() {
   const [availabilityMap, setAvailabilityMap] = useState<Record<string, 'available' | 'unavailable' | 'checking'>>({});
   const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set());
   const [bundleCreationLoading, setBundleCreationLoading] = useState(false);
+  const [otherListingsExpanded, setOtherListingsExpanded] = useState(false);
 
   const allOwnerListings = useMemo(() => {
     if (!gear) return [];
@@ -57,7 +58,7 @@ export default function GearDetail() {
       return;
     }
 
-    setCheckedItems(new Set());
+    setCheckedItems(new Set([gear?.id || '']));
     
     const availabilityPromises = allOwnerListings.map(async (listing) => {
       setAvailabilityMap(prev => ({ ...prev, [listing.id]: 'checking' }));
@@ -490,7 +491,7 @@ export default function GearDetail() {
           onRequestClose={() => setIsModalVisible(false)}
         >
           <View className="flex-1 justify-center items-center bg-black/50 p-4">
-            <View className="bg-white rounded-xl w-full max-w-2xl max-h-[90%] p-6">
+            <View className="bg-white rounded-xl w-full max-w-7xl max-h-[99%] p-10">
               <Text className="text-2xl font-bold mb-4">Build Your Bundle</Text>
               
               {/* Date Pickers */}
@@ -522,23 +523,61 @@ export default function GearDetail() {
                 </View>
               </View>
 
-              {/* Gear List */}
-              <ScrollView className="border-t border-b border-gray-200">
-                {allOwnerListings.map(listing => {
-                  const status = availabilityMap[listing.id];
-                  const isChecked = checkedItems.has(listing.id);
-                  return (
-                    <View key={listing.id} className="flex-row items-center p-2 border-b border-gray-100">
-                      <Checkbox value={isChecked} onValueChange={() => handleToggleChecked(listing.id)} disabled={status !== 'available'} />
-                      <Image source={{uri: `https://creative-blini-b15912.netlify.app/assets/${listing.gear_images?.[0]?.directus_files_id?.id}`}} className="w-12 h-12 rounded-md mx-3" />
-                      <Text className="flex-1 font-semibold">{listing.title}</Text>
-                      {status === 'checking' && <ActivityIndicator size="small" />}
-                      {status === 'available' && <View className="px-2 py-1 rounded-full bg-green-100"><Text className="text-green-800 text-xs">Available</Text></View>}
-                      {status === 'unavailable' && <View className="px-2 py-1 rounded-full bg-red-100"><Text className="text-red-800 text-xs">Unavailable</Text></View>}
+              {/* Main Gear Listing */}
+              <View className="mb-4">
+                <Text className="font-semibold text-lg mb-2">Current Item</Text>
+                <View className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  {gear && (
+                    <View className="flex-row items-center">
+                      <Checkbox 
+                        value={checkedItems.has(gear.id)} 
+                        onValueChange={() => handleToggleChecked(gear.id)} 
+                        disabled={availabilityMap[gear.id] !== 'available'} 
+                      />
+                      <Image 
+                        source={{uri: `https://creative-blini-b15912.netlify.app/assets/${gear.gear_images?.[0]?.directus_files_id?.id}`}} 
+                        className="w-12 h-12 rounded-md mx-3" 
+                      />
+                      <Text className="flex-1 font-semibold">{gear.title}</Text>
+                      {availabilityMap[gear.id] === 'checking' && <ActivityIndicator size="small" />}
+                      {availabilityMap[gear.id] === 'available' && <View className="px-2 py-1 rounded-full bg-green-100"><Text className="text-green-800 text-xs">Available</Text></View>}
+                      {availabilityMap[gear.id] === 'unavailable' && <View className="px-2 py-1 rounded-full bg-red-100"><Text className="text-red-800 text-xs">Unavailable</Text></View>}
                     </View>
-                  )
-                })}
-              </ScrollView>
+                  )}
+                </View>
+              </View>
+
+              {/* Other Listings Section */}
+              {otherListings.length > 0 && (
+                <View className="mb-4">
+                  <TouchableOpacity 
+                    onPress={() => setOtherListingsExpanded(!otherListingsExpanded)}
+                    className="flex-row items-center justify-between py-2"
+                  >
+                    <Text className="font-semibold text-lg">Other listings from the same owner ({otherListings.length})</Text>
+                    <Text className="text-xl">{otherListingsExpanded ? '▼' : '▶'}</Text>
+                  </TouchableOpacity>
+                  
+                                     {otherListingsExpanded && (
+                     <ScrollView className="border border-gray-200 rounded-lg max-h-96">
+                       {otherListings.filter(listing => listing.id !== gear?.id).map(listing => {
+                         const status = availabilityMap[listing.id];
+                         const isChecked = checkedItems.has(listing.id);
+                         return (
+                           <View key={listing.id} className="flex-row items-center p-3 border-b border-gray-100 last:border-b-0">
+                             <Checkbox value={isChecked} onValueChange={() => handleToggleChecked(listing.id)} disabled={status !== 'available'} />
+                             <Image source={{uri: `https://creative-blini-b15912.netlify.app/assets/${listing.gear_images?.[0]?.directus_files_id?.id}`}} className="w-12 h-12 rounded-md mx-3" />
+                             <Text className="flex-1 font-semibold">{listing.title}</Text>
+                             {status === 'checking' && <ActivityIndicator size="small" />}
+                             {status === 'available' && <View className="px-2 py-1 rounded-full bg-green-100"><Text className="text-green-800 text-xs">Available</Text></View>}
+                             {status === 'unavailable' && <View className="px-2 py-1 rounded-full bg-red-100"><Text className="text-red-800 text-xs">Unavailable</Text></View>}
+                           </View>
+                         )
+                       })}
+                     </ScrollView>
+                   )}
+                </View>
+              )}
 
               {/* Action Buttons */}
               <View className="mt-4 flex-row gap-4">
